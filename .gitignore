@@ -5,6 +5,8 @@
 
 # AI-specific files
 .CLAUDE.md
+.serena/
+docs/
 
 # User-specific files
 *.rsuser

@@ -11,4 +11,14 @@
     <ProjectReference Include="..\..\src\FluentChunker\FluentChunker.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Folder Include="testfiles\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="testfiles\testfile.md">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>
