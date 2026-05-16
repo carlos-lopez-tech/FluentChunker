@@ -5,7 +5,11 @@
 
 # AI-specific files
 .CLAUDE.md
+CLAUDE.md
+mcp.json
 .serena/
+.claude/
+.CLAUDE/
 docs/
 
 # User-specific files
