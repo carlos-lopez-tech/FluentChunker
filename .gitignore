@@ -4,12 +4,10 @@
 ## Get latest from https://github.com/github/gitignore/blob/master/VisualStudio.gitignore
 
 # AI-specific files
-.CLAUDE.md
 CLAUDE.md
-mcp.json
+.mcp.json
 .serena/
 .claude/
-.CLAUDE/
 docs/
 
 # User-specific files
