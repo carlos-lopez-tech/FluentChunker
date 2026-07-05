@@ -2,13 +2,13 @@
 {
     public class FixedSizeChunkerTests
     {
-        private SharpTokenizer _tokenizer;
+        private SharpTokenizerAdapter _tokenizer;
         private const string InputText = "A pragmatic developer chooses the least complicated implementation that reliably solves the problem.";
 
         [SetUp]
         public void SetUp()
         {
-            _tokenizer = new SharpTokenizer("o200k_base");
+            _tokenizer = new SharpTokenizerAdapter("o200k_base");
         }
 
         [Test]

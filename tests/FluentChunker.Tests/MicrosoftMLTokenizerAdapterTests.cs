@@ -1,14 +1,14 @@
-﻿namespace FluentChunker.Tests
+namespace FluentChunker.Tests
 {
-    public class SharpTokenizerTests
+    public class MicrosoftMLTokenizerAdapterTests
     {
-        private SharpTokenizer _tokenizer;
+        private MicrosoftMLTokenizerAdapter _tokenizer;
         private const string InputText = "A pragmatic developer chooses the least complicated implementation that reliably solves the problem.";
 
         [SetUp]
         public void SetUp()
         {
-            _tokenizer = new SharpTokenizer("o200k_base");
+            _tokenizer = new MicrosoftMLTokenizerAdapter("o200k_base");
         }
 
         [Test]
@@ -28,7 +28,7 @@
             var count = _tokenizer.CountTokens(string.Empty);
 
             // Assert
-            Assert.That(count, Is.EqualTo(0));
+            Assert.That(count, Is.Zero);
         }
 
         [Test]

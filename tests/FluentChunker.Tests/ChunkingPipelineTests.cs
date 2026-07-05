@@ -1,14 +1,19 @@
+using System.Text;
+
 namespace FluentChunker.Tests
 {
     public class ChunkingPipelineTests
     {
         private const string InputText = "A pragmatic developer chooses the least complicated implementation that reliably solves the problem.";
-        private SharpTokenizer _sharpTokenizer;
+        private const string EncodingName = "o200k_base";
+        private SharpTokenizerAdapter _sharpTokenizer;
+        private MicrosoftMLTokenizerAdapter _microsoftMLTokenizer;
 
         [SetUp]
         public void Setup()
         {
-            _sharpTokenizer = new SharpTokenizer("o200k_base");
+            _sharpTokenizer = new SharpTokenizerAdapter(EncodingName);
+            _microsoftMLTokenizer = new MicrosoftMLTokenizerAdapter(EncodingName);
         }
 
         [Test]
@@ -89,7 +94,7 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Builder_MultipleInstances_DontInterfere()
+        public void Builder_MultipleInstancesWithDifferentTokenizers_DontInterfere()
         {
             // Arrange
             var builder1 = new ChunkingPipeline.Builder()
@@ -98,7 +103,7 @@ namespace FluentChunker.Tests
                 .WithMetadata(meta => meta.Set("Version", "1"));
 
             var builder2 = new ChunkingPipeline.Builder()
-                .UseTokenizer(_sharpTokenizer)
+                .UseTokenizer(_microsoftMLTokenizer)
                 .ByFixedSize(maxTokens: 20)
                 .WithMetadata(meta => meta.Set("Version", "2"));
 
