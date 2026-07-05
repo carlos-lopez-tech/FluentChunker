@@ -2,7 +2,6 @@
   <Folder Name="/Solution Items/">
     <File Path=".copilot-instructions.md" />
     <File Path=".gitignore" />
-    <File Path="CLAUDE.md" />
     <File Path="README.md" />
   </Folder>
   <Project Path="samples/FluentChunker.Samples.Demo/FluentChunker.Samples.Demo.csproj" Id="90ea9e64-fba6-44c7-883b-db5b96dc5eef" />
