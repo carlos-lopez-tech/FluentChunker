@@ -1,5 +1,3 @@
-using System.Text;
-
 namespace FluentChunker.Tests
 {
     public class ChunkingPipelineTests
@@ -22,23 +20,27 @@ namespace FluentChunker.Tests
             // Arrange
             var pipeline = new ChunkingPipeline.Builder()
                 .UseTokenizer(_sharpTokenizer)
-                .ByFixedSize(maxTokens: 10, overlap: 0)
+                .ByFixedSize(maxTokens: 10)
                 .WithMetadata(meta =>
                 {
                     meta.Set("Source", "test.md");
                     meta.Set("Author", "Carlos Lopez Vaguez");
+                    meta.Set("Date", DateTime.UtcNow.ToString("o"));
+                    meta.Set("Numeric", 1);
                 })
                 .Build();
 
             // Act
-            var chunks = pipeline.Execute(InputText);
+            var chunks = pipeline.Execute(InputText);   
 
             // Assert
             Assert.That(chunks, Has.Count.EqualTo(2));
             Assert.That(chunks[0].Text, Is.Not.Empty);
             Assert.That(chunks[0].TokenCount, Is.EqualTo(10));
-            Assert.That(chunks[0].Metadata["Source"], Is.EqualTo("test.md"));
-            Assert.That(chunks[0].Metadata["Author"], Is.EqualTo("Carlos Lopez Vaguez"));
+            Assert.That(chunks[0].Metadata["Source"].GetString(), Is.EqualTo("test.md"));
+            Assert.That(chunks[0].Metadata["Author"].GetString(), Is.EqualTo("Carlos Lopez Vaguez"));
+            Assert.That(chunks[0].Metadata["Date"].GetString(), Is.Not.Empty);
+            Assert.That(chunks[0].Metadata["Numeric"].GetInt32(), Is.EqualTo(1));
         }
 
         [Test]
@@ -47,7 +49,7 @@ namespace FluentChunker.Tests
             // Arrange
             var pipeline = new ChunkingPipeline.Builder()
                 .UseTokenizer(_sharpTokenizer)
-                .ByFixedSize(maxTokens: 10, overlap: 0)
+                .ByFixedSize(10)
                 .Build();
 
             // Act
@@ -67,7 +69,8 @@ namespace FluentChunker.Tests
             // Arrange
             var pipeline = new ChunkingPipeline.Builder()
                 .UseTokenizer(_sharpTokenizer)
-                .ByFixedSize(maxTokens: 10, overlap: 1)
+                .ByFixedSize(10)
+                .WithOverlap(1)
                 .WithMetadata(meta => meta.Set("Source", "overlap-test"))
                 .Build();
 
@@ -76,9 +79,10 @@ namespace FluentChunker.Tests
 
             // Assert
             Assert.That(chunks, Has.Count.GreaterThan(1));
+            Assert.That(chunks[0].OverlapCount, Is.EqualTo(1));
             foreach (var chunk in chunks)
             {
-                Assert.That(chunk.Metadata["Source"], Is.EqualTo("overlap-test"));
+                Assert.That(chunk.Metadata["Source"].GetString(), Is.EqualTo("overlap-test"));
             }
         }
 
@@ -87,7 +91,7 @@ namespace FluentChunker.Tests
         {
             // Arrange
             var builder = new ChunkingPipeline.Builder()
-                .ByFixedSize(maxTokens: 10);
+                .ByFixedSize(10);
 
             // Act & Assert
             Assert.Throws<ArgumentNullException>(() => builder.Build());
@@ -99,12 +103,12 @@ namespace FluentChunker.Tests
             // Arrange
             var builder1 = new ChunkingPipeline.Builder()
                 .UseTokenizer(_sharpTokenizer)
-                .ByFixedSize(maxTokens: 10)
+                .ByFixedSize(10)
                 .WithMetadata(meta => meta.Set("Version", "1"));
 
             var builder2 = new ChunkingPipeline.Builder()
                 .UseTokenizer(_microsoftMLTokenizer)
-                .ByFixedSize(maxTokens: 20)
+                .ByFixedSize(20)
                 .WithMetadata(meta => meta.Set("Version", "2"));
 
             // Act
@@ -115,8 +119,8 @@ namespace FluentChunker.Tests
             var chunks2 = pipeline2.Execute(InputText);
 
             // Assert
-            Assert.That(chunks1[0].Metadata["Version"], Is.EqualTo("1"));
-            Assert.That(chunks2[0].Metadata["Version"], Is.EqualTo("2"));
+            Assert.That(chunks1[0].Metadata["Version"].GetString(), Is.EqualTo("1"));
+            Assert.That(chunks2[0].Metadata["Version"].GetString(), Is.EqualTo("2"));
             Assert.That(chunks1, Has.Count.GreaterThan(chunks2.Count));
         }
 
@@ -126,7 +130,7 @@ namespace FluentChunker.Tests
             // Arrange
             var builder = new ChunkingPipeline.Builder()
                 .UseTokenizer(_sharpTokenizer)
-                .ByFixedSize(maxTokens: 15);
+                .ByFixedSize(15);
 
             // Act
             var pipeline1 = builder.Build();

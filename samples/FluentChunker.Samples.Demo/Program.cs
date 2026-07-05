@@ -7,13 +7,15 @@ namespace FluentChunker.Samples.Demo
         static void Main(string[] args)
         {
             var content = File.ReadAllText("Testfiles\\testfile.md");
+            const string EncodingName = "o200k_base";
 
-            // Example 1: Create a tokenizer using the SharpTokenizerAdapter
-            var sharpTokenTokenizer = new SharpTokenizerAdapter("o200k_base"); 
+        // Example 1: Create a tokenizer using the SharpTokenizerAdapter
+        var sharpTokenTokenizer = new SharpTokenizerAdapter(EncodingName); 
 
             var pipeline1 = new ChunkingPipeline.Builder()
                 .UseTokenizer(sharpTokenTokenizer)
-                .ByFixedSize(maxTokens: 500, overlap: 50)
+                .ByFixedSize(500)
+                .WithOverlap(50)
                 .WithMetadata(meta =>
                 {
                     meta.Set("Source", "testfile.md");
@@ -28,11 +30,12 @@ namespace FluentChunker.Samples.Demo
 
 
             // Example 2: Create a tokenizer using the MicrosoftMLTokenizerAdapter
-            var microsoftMLTokenizer = new MicrosoftMLTokenizerAdapter("o200k_base");
+            var microsoftMLTokenizer = new MicrosoftMLTokenizerAdapter(EncodingName);
 
             var pipeline2 = new ChunkingPipeline.Builder()
                 .UseTokenizer(microsoftMLTokenizer)
-                .ByFixedSize(maxTokens: 500, overlap: 50)
+                .ByFixedSize(500)
+                .WithOverlap(50)
                 .WithMetadata(meta =>
                 {
                     meta.Set("Source", "testfile.md");
@@ -52,13 +55,16 @@ namespace FluentChunker.Samples.Demo
         {
             foreach (var chunk in chunks)
             {
-                Console.WriteLine($"[{chunk.Index}] ({chunk.TokenCount} tokens)");
-                Console.WriteLine($"  Source: {chunk.Metadata.GetValueOrDefault("Source", "N/A")}");
-                Console.WriteLine($"  Author: {chunk.Metadata.GetValueOrDefault("Author", "N/A")}");
+                Console.WriteLine($"Index: [{chunk.Index}] ({chunk.TokenCount} tokens) ({chunk.OverlapCount} overlap)");
+                foreach (var kvp in chunk.Metadata)
+                {
+                    Console.WriteLine($"  {kvp.Key}: {kvp.Value}");
+                }
                 Console.WriteLine($"  Text:  {chunk.Text[..Math.Min(80, chunk.Text.Length)]}...");
                 Console.WriteLine(string.Concat(Enumerable.Repeat("- ", 50)));
-                Console.WriteLine("\n\n");
+                Console.WriteLine("\n");
             }
+            Console.WriteLine("\n");
         }
     }
 }

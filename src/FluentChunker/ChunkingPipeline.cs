@@ -1,13 +1,14 @@
 ﻿using FluentChunker.Dtos;
+using System.Text.Json;
 
 namespace FluentChunker
 {
     public record ChunkingPipeline
     {
         private readonly FixedSizeChunker _chunker;
-        private readonly Dictionary<string, string>? _metadata;
+        private readonly Dictionary<string, JsonElement> _metadata;
 
-        internal ChunkingPipeline(FixedSizeChunker chunker, Dictionary<string, string>? metadata)
+        internal ChunkingPipeline(FixedSizeChunker chunker, Dictionary<string, JsonElement> metadata)
         {
             _chunker = chunker;
             _metadata = metadata;
@@ -36,7 +37,7 @@ namespace FluentChunker
             private ITokenizer? _tokenizer;
             private int _maxTokens;
             private int _overlap;
-            private Action<MetadataBuilder>? _metadataConfig;
+            private Action<MetadataBuilder>? _metadata;
 
             public Builder UseTokenizer(ITokenizer tokenizer)
             {
@@ -44,16 +45,21 @@ namespace FluentChunker
                 return this;
             }
 
-            public Builder ByFixedSize(int maxTokens, int overlap = 0)
+            public Builder ByFixedSize(int maxTokens)
             {
                 _maxTokens = maxTokens;
+                return this;
+            }
+
+            public Builder WithOverlap(int overlap)
+            {
                 _overlap = overlap;
                 return this;
             }
 
             public Builder WithMetadata(Action<MetadataBuilder> configure)
             {
-                _metadataConfig = configure;
+                _metadata = configure;
                 return this;
             }
 
@@ -63,12 +69,12 @@ namespace FluentChunker
 
                 var chunker = new FixedSizeChunker(_tokenizer, _maxTokens, _overlap);
 
-                Dictionary<string, string>? metadata = null;
-                if (_metadataConfig is not null)
+                Dictionary<string, JsonElement> metadata = [];
+                if (_metadata is not null)
                 {
-                    var builder = new MetadataBuilder();
-                    _metadataConfig(builder);
-                    metadata = builder.Build();
+                    var metadataBuilder = new MetadataBuilder();
+                    _metadata(metadataBuilder);
+                    metadata = metadataBuilder.Build();
                 }
 
                 return new ChunkingPipeline(chunker, metadata);

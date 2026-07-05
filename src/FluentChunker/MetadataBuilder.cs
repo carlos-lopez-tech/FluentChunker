@@ -1,14 +1,16 @@
-﻿namespace FluentChunker
+﻿using System.Text.Json;
+
+namespace FluentChunker
 {
     public class MetadataBuilder
     {
-        private readonly Dictionary<string, string> _metadata = [];
+        private readonly Dictionary<string, JsonElement> _metadata = [];
 
-        public void Set(string key, string value)
+        public void Set<T>(string key, T value)
         {
-            _metadata[key] = value;
+            _metadata[key] = JsonSerializer.SerializeToElement(value);
         }
 
-        internal Dictionary<string, string> Build() => new(_metadata);
+        internal Dictionary<string, JsonElement> Build() => new(_metadata);
     }
 }

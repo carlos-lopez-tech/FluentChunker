@@ -8,7 +8,7 @@ namespace FluentChunker
         private readonly int _maxTokens;
         private readonly int _overlap;
 
-        public FixedSizeChunker(ITokenizer tokenizer, int maxTokens, int overlap = 0)
+        public FixedSizeChunker(ITokenizer tokenizer, int maxTokens, int overlap)
         {
             _tokenizer = tokenizer;
             _maxTokens = maxTokens;
@@ -41,14 +41,17 @@ namespace FluentChunker
                     window[i] = allTokens[start + i];
                 }
 
+                var isLast = end == allTokens.Count;
+
                 chunks.Add(new ChunkDto
                 {
                     Index = index++,
                     Text = _tokenizer.Decode(window),
-                    TokenCount = length
+                    TokenCount = length,
+                    OverlapCount = isLast ? 0 : _overlap
                 });
 
-                if (end == allTokens.Count)
+                if (isLast)
                     break;
             }
 
