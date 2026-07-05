@@ -59,7 +59,7 @@ namespace FluentChunker
 
             public ChunkingPipeline Build()
             {
-                ArgumentNullException.ThrowIfNull(_tokenizer, nameof(_tokenizer));
+                ArgumentNullException.ThrowIfNull(_tokenizer);
 
                 var chunker = new FixedSizeChunker(_tokenizer, _maxTokens, _overlap);
 
