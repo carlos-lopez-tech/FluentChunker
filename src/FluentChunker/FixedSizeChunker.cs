@@ -1,4 +1,4 @@
-﻿using FluentChunker.Dtos;
+﻿using FluentChunker.Contracts;
 
 namespace FluentChunker
 {
@@ -15,7 +15,7 @@ namespace FluentChunker
             _overlap = overlap;
         }
 
-        public IReadOnlyList<ChunkDto> Chunk(string text)
+        public IReadOnlyList<Chunk> Chunk(string text)
         {
             if (string.IsNullOrEmpty(text))
                 return [];
@@ -23,9 +23,9 @@ namespace FluentChunker
             var allTokens = _tokenizer.Encode(text);
 
             if (allTokens.Count <= _maxTokens)
-                return [new ChunkDto { Index = 0, Text = text, TokenCount = allTokens.Count }];
+                return [new Chunk { Index = 0, Text = text, TokenCount = allTokens.Count }];
 
-            var chunks = new List<ChunkDto>();
+            var chunks = new List<Chunk>();
             var step = _maxTokens - _overlap;
             var index = 0;
 
@@ -43,7 +43,7 @@ namespace FluentChunker
 
                 var isLast = end == allTokens.Count;
 
-                chunks.Add(new ChunkDto
+                chunks.Add(new Chunk
                 {
                     Index = index++,
                     Text = _tokenizer.Decode(window),

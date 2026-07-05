@@ -1,4 +1,4 @@
-﻿using FluentChunker.Dtos;
+﻿using FluentChunker.Contracts;
 using System.Text.Json;
 
 namespace FluentChunker
@@ -14,7 +14,7 @@ namespace FluentChunker
             _metadata = metadata;
         }
 
-        public IReadOnlyList<ChunkDto> Execute(string document)
+        public IReadOnlyList<Chunk> Execute(string document)
         {
             var chunks = _chunker.Chunk(document);
 

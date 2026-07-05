@@ -1,4 +1,4 @@
-﻿using FluentChunker.Dtos;
+﻿using FluentChunker.Contracts;
 
 namespace FluentChunker.Samples.Demo
 {
@@ -51,7 +51,7 @@ namespace FluentChunker.Samples.Demo
             Console.ReadKey();
         }
 
-        private static void PrintChunks(IReadOnlyList<ChunkDto> chunks)
+        private static void PrintChunks(IReadOnlyList<Chunk> chunks)
         {
             foreach (var chunk in chunks)
             {

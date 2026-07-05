@@ -1,8 +1,8 @@
 ﻿using System.Text.Json;
 
-namespace FluentChunker.Dtos
+namespace FluentChunker.Contracts
 {
-    public record ChunkDto
+    public record Chunk
     {
         public required int Index { get; init; }
         public required string Text { get; init; }
