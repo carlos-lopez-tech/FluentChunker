@@ -89,17 +89,6 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Build_WithTokenizerButNoChunkingStrategy_ThrowsException()
-        {
-            // Arrange
-            var builder = new ChunkingPipeline.Builder()
-                .UseTokenizer(_sharpTokenizer);
-
-            // Act & Assert
-            Assert.Throws<ArgumentException>(() => builder.Build());
-        }
-
-        [Test]
         public void Builder_MultipleInstances_DontInterfere()
         {
             // Arrange

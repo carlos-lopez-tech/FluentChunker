@@ -2,14 +2,13 @@
 
 A .NET library for building fluent, composable text chunking pipelines. 
 Split text into meaningful chunks for RAG (Retrieval-Augmented Generation), embeddings, search indexing, and other NLP workflows with a clean, readable API.
-- **Multiple strategies** — Fixed-size, sentence-based, paragraph-based, recursive, and semantic chunking
 
 ## Features
 
 - **Fluent Builder API** — Chain-based pipeline configuration with clear, expressive syntax
+- **Multiple strategies** — Fixed-size, sentence-based, paragraph-based, recursive, and semantic chunking
 - **Token-aware chunking** — Split text by token count with accurate token counting
 - **Customizable tokenizers** — Plug in your own tokenizer implementation or use built-in Microsoft.ML.Tokenizers, TiktokenSharp, SharpToken integration
-- **Multiple strategies** — Fixed-size, sentence-based, paragraph-based, recursive, and semantic chunking
 - **Overlap support** — Configure token overlap between chunks to preserve context
 - **Metadata enrichment** — Attach custom metadata to each chunk for tracking and context
 - **Pipeline composition** — Execute chunking transformations in a single call
