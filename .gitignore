@@ -4,6 +4,7 @@
 ## Get latest from https://github.com/github/gitignore/blob/master/VisualStudio.gitignore
 
 # AI-specific files
+.copilot-instructions.md
 CLAUDE.md
 .mcp.json
 .serena/

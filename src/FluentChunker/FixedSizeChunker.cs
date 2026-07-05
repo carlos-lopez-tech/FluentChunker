@@ -4,18 +4,18 @@ namespace FluentChunker
 {
     public class FixedSizeChunker
     {
-        private readonly SharpTokenizer _tokenizer;
+        private readonly ITokenizer _tokenizer;
         private readonly int _maxTokens;
         private readonly int _overlap;
 
-        public FixedSizeChunker(SharpTokenizer tokenizer, int maxTokens, int overlap = 0)
+        public FixedSizeChunker(ITokenizer tokenizer, int maxTokens, int overlap = 0)
         {
             _tokenizer = tokenizer;
             _maxTokens = maxTokens;
             _overlap = overlap;
         }
 
-        public List<ChunkDto> Chunk(string text)
+        public IReadOnlyList<ChunkDto> Chunk(string text)
         {
             if (string.IsNullOrEmpty(text))
                 return [];
@@ -32,14 +32,20 @@ namespace FluentChunker
             for (var start = 0; start < allTokens.Count; start += step)
             {
                 var end = Math.Min(start + _maxTokens, allTokens.Count);
-                var window = allTokens.GetRange(start, end - start);
-                var decoded = _tokenizer.Decode(window);
+                var length = end - start;
+
+                var window = new int[length];
+
+                for (var i = 0; i < length; i++)
+                {
+                    window[i] = allTokens[start + i];
+                }
 
                 chunks.Add(new ChunkDto
                 {
                     Index = index++,
-                    Text = decoded,
-                    TokenCount = window.Count
+                    Text = _tokenizer.Decode(window),
+                    TokenCount = length
                 });
 
                 if (end == allTokens.Count)

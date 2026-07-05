@@ -1,11 +1,9 @@
 <Solution>
   <Folder Name="/Solution Items/">
+    <File Path=".copilot-instructions.md" />
     <File Path=".gitignore" />
     <File Path="CLAUDE.md" />
-    <File Path="docs/Chunking/P001_Chunking_MVP.md" />
-    <File Path="docs/index.md" />
     <File Path="README.md" />
-    <File Path="TODO.md" />
   </Folder>
   <Project Path="samples/FluentChunker.Samples.Demo/FluentChunker.Samples.Demo.csproj" Id="90ea9e64-fba6-44c7-883b-db5b96dc5eef" />
   <Project Path="src/FluentChunker/FluentChunker.csproj" />

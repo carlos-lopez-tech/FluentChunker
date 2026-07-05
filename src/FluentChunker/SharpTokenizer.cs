@@ -2,7 +2,7 @@
 
 namespace FluentChunker
 {
-    public class SharpTokenizer
+    public sealed class SharpTokenizer : ITokenizer
     {
         private readonly GptEncoding _encoding;
 
@@ -16,12 +16,12 @@ namespace FluentChunker
             return _encoding.CountTokens(text);
         }
 
-        public List<int> Encode(string text)
+        public IReadOnlyList<int> Encode(string text)
         {
             return _encoding.Encode(text);
         }
 
-        public string Decode(List<int> tokens)
+        public string Decode(IReadOnlyList<int> tokens)
         {
             return _encoding.Decode(tokens);
         }
