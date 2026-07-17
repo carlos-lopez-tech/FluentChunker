@@ -15,7 +15,7 @@ namespace FluentChunker.Samples.Demo
             var pipeline1 = new ChunkingPipeline.Builder()
                 .UseTokenizer(sharpTokenTokenizer)
                 .ByFixedSize(500)
-                .WithOverlap(50)
+                //.WithOverlap(50)
                 .WithMetadata(meta =>
                 {
                     meta.Set("Source", "testfile.md");
@@ -35,7 +35,7 @@ namespace FluentChunker.Samples.Demo
             var pipeline2 = new ChunkingPipeline.Builder()
                 .UseTokenizer(microsoftMLTokenizer)
                 .ByFixedSize(500)
-                .WithOverlap(50)
+                //.WithOverlap(50)
                 .WithMetadata(meta =>
                 {
                     meta.Set("Source", "testfile.md");

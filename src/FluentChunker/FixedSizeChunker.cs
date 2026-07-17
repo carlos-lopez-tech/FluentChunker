@@ -2,7 +2,7 @@
 
 namespace FluentChunker
 {
-    public class FixedSizeChunker
+    public class FixedSizeChunker : IChunker
     {
         private readonly ITokenizer _tokenizer;
         private readonly int _maxTokens;

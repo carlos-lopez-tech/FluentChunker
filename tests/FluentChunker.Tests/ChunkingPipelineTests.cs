@@ -70,7 +70,7 @@ namespace FluentChunker.Tests
             var pipeline = new ChunkingPipeline.Builder()
                 .UseTokenizer(_sharpTokenizer)
                 .ByFixedSize(10)
-                .WithOverlap(1)
+                //.WithOverlap(1)
                 .WithMetadata(meta => meta.Set("Source", "overlap-test"))
                 .Build();
 

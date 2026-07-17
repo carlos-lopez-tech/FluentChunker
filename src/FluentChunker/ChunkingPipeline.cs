@@ -5,10 +5,10 @@ namespace FluentChunker
 {
     public record ChunkingPipeline
     {
-        private readonly FixedSizeChunker _chunker;
+        private readonly IChunker _chunker;
         private readonly Dictionary<string, JsonElement> _metadata;
 
-        internal ChunkingPipeline(FixedSizeChunker chunker, Dictionary<string, JsonElement> metadata)
+        internal ChunkingPipeline(IChunker chunker, Dictionary<string, JsonElement> metadata)
         {
             _chunker = chunker;
             _metadata = metadata;
@@ -35,8 +35,7 @@ namespace FluentChunker
         public class Builder
         {
             private ITokenizer? _tokenizer;
-            private int _maxTokens;
-            private int _overlap;
+            private IChunker? _chunker;
             private Action<MetadataBuilder>? _metadata;
 
             public Builder UseTokenizer(ITokenizer tokenizer)
@@ -45,17 +44,30 @@ namespace FluentChunker
                 return this;
             }
 
-            public Builder ByFixedSize(int maxTokens)
+            public Builder ByFixedSize(int maxTokens, int overlap = 0)
             {
-                _maxTokens = maxTokens;
+                ArgumentNullException.ThrowIfNull(_tokenizer);
+                _chunker = new FixedSizeChunker(_tokenizer, maxTokens, overlap);
                 return this;
             }
 
-            public Builder WithOverlap(int overlap)
-            {
-                _overlap = overlap;
-                return this;
-            }
+            //public Builder ByRecursive()
+            //{
+            //    _chunkerFactory = () => new RecursiveChunker(_tokenizer!);
+            //    return this;
+            //}
+
+            //public Builder BySentence()
+            //{
+            //    _chunkerFactory = () => new SentenceChunker(_tokenizer!);
+            //    return this;
+            //}
+
+            //public Builder WithOverlap(int overlap)
+            //{
+            //    _overlap = overlap;
+            //    return this;
+            //}
 
             public Builder WithMetadata(Action<MetadataBuilder> configure)
             {
@@ -65,9 +77,7 @@ namespace FluentChunker
 
             public ChunkingPipeline Build()
             {
-                ArgumentNullException.ThrowIfNull(_tokenizer);
-
-                var chunker = new FixedSizeChunker(_tokenizer, _maxTokens, _overlap);
+                ArgumentNullException.ThrowIfNull(_chunker);
 
                 Dictionary<string, JsonElement> metadata = [];
                 if (_metadata is not null)
@@ -77,7 +87,7 @@ namespace FluentChunker
                     metadata = metadataBuilder.Build();
                 }
 
-                return new ChunkingPipeline(chunker, metadata);
+                return new ChunkingPipeline(_chunker, metadata);
             }
         }
     }
