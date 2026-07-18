@@ -19,7 +19,7 @@ Split text into meaningful chunks for RAG (Retrieval-Augmented Generation), embe
 using FluentChunker;
 
 // Create tokenizer and fluent pipeline
-var tokenizer = new SharpTokenizerAdapter("o200k_base");
+var tokenizer = new MicrosoftMLTokenizerAdapter("o200k_base");
 
 var pipeline = ChunkingPipeline.Builder.Initialize()
     .UseTokenizer(tokenizer)
@@ -58,7 +58,7 @@ dotnet add reference path/to/src/FluentChunker/FluentChunker.csproj
 ### Basic Fixed-Size Chunking
 
 ```csharp
-var tokenizer = new SharpTokenizerAdapter("o200k_base");
+var tokenizer = new MicrosoftMLTokenizerAdapter("o200k_base");
 
 var pipeline = ChunkingPipeline.Builder.Initialize()
     .UseTokenizer(tokenizer)
@@ -73,7 +73,7 @@ var chunks = pipeline.Execute(text);
 ### Chunking with Overlap
 
 ```csharp
-var tokenizer = new SharpTokenizerAdapter("o200k_base");
+var tokenizer = new MicrosoftMLTokenizerAdapter("o200k_base");
 
 var pipeline = ChunkingPipeline.Builder.Initialize()
     .UseTokenizer(tokenizer)
@@ -89,7 +89,7 @@ var chunks = pipeline.Execute(text);
 ### Adding Custom Metadata
 
 ```csharp
-var tokenizer = new SharpTokenizerAdapter("o200k_base");
+var tokenizer = new MicrosoftMLTokenizerAdapter("o200k_base");
 
 var pipeline = ChunkingPipeline.Builder.Initialize()
     .UseTokenizer(tokenizer)
@@ -118,6 +118,8 @@ foreach (var chunk in chunks)
 Pipeline-level metadata (`WithMetadata`) is constant for the whole run; document-level metadata is passed per `Execute` call. On key collision, the document value wins.
 
 ```csharp
+var tokenizer = new MicrosoftMLTokenizerAdapter("o200k_base");
+
 var pipeline = ChunkingPipeline.Builder.Initialize()
     .UseTokenizer(tokenizer)
     .UseSplitter(s => s
@@ -140,12 +142,12 @@ foreach (var doc in documents)
 
 ## Tokenizers
 
-### SharpToken Integration
+### MicrosoftMLTokenizer Integration
 
-FluentChunker includes built-in support for [SharpToken](https://github.com/dmitry-brazhenko/SharpToken), enabling accurate token counting for OpenAI models:
+FluentChunker includes built-in support for [Microsoft.ML.Tokenizers](https://www.nuget.org/packages/Microsoft.ML.Tokenizers), enabling accurate token counting for OpenAI models:
 
 ```csharp
-var tokenizer = new SharpTokenizerAdapter("o200k_base"); // GPT-4o tokenizer
+var tokenizer = new MicrosoftMLTokenizerAdapter("o200k_base"); // GPT-4o tokenizer
 var pipeline = ChunkingPipeline.Builder.Initialize()
     .UseTokenizer(tokenizer)
     .UseSplitter(s => s
@@ -154,7 +156,7 @@ var pipeline = ChunkingPipeline.Builder.Initialize()
     .Build();
 ```
 
-A second adapter, `MicrosoftMLTokenizerAdapter`, wraps [Microsoft.ML.Tokenizers](https://www.nuget.org/packages/Microsoft.ML.Tokenizers) with the same encodings.
+A second adapter, `SharpTokenizerAdapter`, wraps [SharpToken](https://github.com/dmitry-brazhenko/SharpToken) with the same encodings.
 
 Supported encoding models include `cl100k_base` (GPT-3.5, GPT-4), `o200k_base` (GPT-4o), and others.
 
@@ -185,7 +187,7 @@ var pipeline = ChunkingPipeline.Builder.Initialize()
     .Build();
 ```
 
-All three methods (`CountTokens`, `Encode`, `Decode`) are required by the `ITokenizer` interface.
+All three methods (`Encode`, `Decode`, `CountTokens`) are required by the `ITokenizer` interface.
 
 ## API Reference
 
@@ -231,8 +233,8 @@ Implement to use custom tokenization:
 ## Requirements
 
 - .NET 10.0 or later
-- SharpToken 2.0.6 or later (included as dependency)
 - Microsoft.ML.Tokenizers 2.0.0 or later (included as dependency)
+- - SharpToken 2.0.6 or later (included as dependency)
 
 ## Development
 
