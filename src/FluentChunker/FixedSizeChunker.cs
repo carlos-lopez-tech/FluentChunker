@@ -1,20 +1,22 @@
-﻿using FluentChunker.Contracts;
+using FluentChunker.Contracts;
 
 namespace FluentChunker
 {
-    public class FixedSizeChunker : IChunker
+    /// <summary>
+    /// Splits a document into fixed-size token windows of at most <c>maxTokens</c> tokens,
+    /// optionally overlapping by <c>overlap</c> tokens.
+    /// </summary>
+    /// <remarks>Creates a fixed-size chunker.</remarks>
+    /// <param name="tokenizer">The tokenizer used to encode and decode the document.</param>
+    /// <param name="maxTokens">Upper token bound per chunk; must be positive.</param>
+    /// <param name="overlap">Tokens shared between consecutive chunks; must be smaller than <paramref name="maxTokens"/>.</param>
+    public class FixedSizeChunker(ITokenizer tokenizer, int maxTokens, int overlap) : IChunker
     {
-        private readonly ITokenizer _tokenizer;
-        private readonly int _maxTokens;
-        private readonly int _overlap;
+        private readonly ITokenizer _tokenizer = tokenizer;
+        private readonly int _maxTokens = maxTokens;
+        private readonly int _overlap = overlap;
 
-        public FixedSizeChunker(ITokenizer tokenizer, int maxTokens, int overlap)
-        {
-            _tokenizer = tokenizer;
-            _maxTokens = maxTokens;
-            _overlap = overlap;
-        }
-
+        /// <inheritdoc/>
         public IReadOnlyList<Chunk> Chunk(string text)
         {
             if (string.IsNullOrEmpty(text))

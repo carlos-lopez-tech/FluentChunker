@@ -7,6 +7,14 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="Steps\**" />
+    <EmbeddedResource Remove="Steps\**" />
+    <None Remove="Steps\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Direct reference overrides the vulnerable transitive 9.0.4 pulled in by Microsoft.ML.Tokenizers.Data.O200kBase (NU1903 / GHSA-73j8-2gch-69rq) -->
+    <PackageReference Include="Microsoft.Bcl.Memory" Version="10.0.10" />
     <PackageReference Include="Microsoft.ML.Tokenizers" Version="2.0.0" />
     <PackageReference Include="Microsoft.ML.Tokenizers.Data.O200kBase" Version="2.0.0" />
     <PackageReference Include="SharpToken" Version="2.0.6" />

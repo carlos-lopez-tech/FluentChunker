@@ -1,4 +1,4 @@
-﻿using Microsoft.ML.Tokenizers;
+using Microsoft.ML.Tokenizers;
 
 namespace FluentChunker
 {
@@ -11,10 +11,10 @@ namespace FluentChunker
             _tokenizer = TiktokenTokenizer.CreateForEncoding(encodingName);
         }
 
-        public int CountTokens(string text) => _tokenizer.CountTokens(text);
+        public IReadOnlyList<int> Encode(string text) => _tokenizer.EncodeToIds(text);
 
         public string Decode(IReadOnlyList<int> tokens) => _tokenizer.Decode(tokens);
 
-        public IReadOnlyList<int> Encode(string text) => _tokenizer.EncodeToIds(text);
+        public int CountTokens(string text) => _tokenizer.CountTokens(text);
     }
 }

@@ -1,4 +1,4 @@
-﻿using FluentChunker.Contracts;
+using FluentChunker.Contracts;
 
 namespace FluentChunker
 {

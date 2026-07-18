@@ -1,4 +1,4 @@
-﻿using SharpToken;
+using SharpToken;
 
 namespace FluentChunker
 {
@@ -11,19 +11,10 @@ namespace FluentChunker
             _tokenizer = GptEncoding.GetEncoding(encodingName);
         }
 
-        public int CountTokens(string text)
-        {
-            return _tokenizer.CountTokens(text);
-        }
+        public int CountTokens(string text) => _tokenizer.CountTokens(text);
 
-        public IReadOnlyList<int> Encode(string text)
-        {
-            return _tokenizer.Encode(text);
-        }
+        public IReadOnlyList<int> Encode(string text) => _tokenizer.Encode(text);
 
-        public string Decode(IReadOnlyList<int> tokens)
-        {
-            return _tokenizer.Decode(tokens);
-        }
+        public string Decode(IReadOnlyList<int> tokens) => _tokenizer.Decode(tokens);
     }
 }

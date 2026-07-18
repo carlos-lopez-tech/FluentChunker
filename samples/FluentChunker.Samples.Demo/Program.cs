@@ -6,48 +6,30 @@ namespace FluentChunker.Samples.Demo
     {
         static void Main(string[] args)
         {
-            var content = File.ReadAllText("Testfiles\\testfile.md");
+            var content = File.ReadAllText("Testfiles\\testfile.txt");
             const string EncodingName = "o200k_base";
 
-        // Example 1: Create a tokenizer using the SharpTokenizerAdapter
-        var sharpTokenTokenizer = new SharpTokenizerAdapter(EncodingName); 
-
-            var pipeline1 = new ChunkingPipeline.Builder()
-                .UseTokenizer(sharpTokenTokenizer)
-                .ByFixedSize(500)
-                //.WithOverlap(50)
-                .WithMetadata(meta =>
-                {
-                    meta.Set("Source", "testfile.md");
-                    meta.Set("Author", "Carlos Lopez Vaguez");
-                })
-                .Build();
-
-            var chunks1 = pipeline1.Execute(content);
-
-            Console.WriteLine("Example 1: SharpTokenizerAdapter\n");
-            PrintChunks(chunks1);
-
-
-            // Example 2: Create a tokenizer using the MicrosoftMLTokenizerAdapter
+            // Example 1: Create Pipeline by using a tokenizer with MicrosoftMLTokenizerAdapter
             var microsoftMLTokenizer = new MicrosoftMLTokenizerAdapter(EncodingName);
 
-            var pipeline2 = new ChunkingPipeline.Builder()
+            var pipeline = ChunkingPipeline.Builder.Initialize()
                 .UseTokenizer(microsoftMLTokenizer)
-                .ByFixedSize(500)
-                //.WithOverlap(50)
-                .WithMetadata(meta =>
-                {
-                    meta.Set("Source", "testfile.md");
-                    meta.Set("Author", "Carlos Lopez Vaguez");
-                })
+                .UseSplitter(s => s
+                    .WithFixedSizeChunking()
+                    .WithMaxTokenSize(500)
+                    .WithOverlap(50))
+                .WithMetadata(meta => meta.Set("SourceType", "sample-files"))
                 .Build();
 
-            var chunks2 = pipeline2.Execute(content);
+            var chunks1 = pipeline.Execute(content, meta =>
+            {
+                meta.Set("Source", "testfile.txt");
+                meta.Set("Title", "Demo Test File");
+                meta.Set("CreatedAt", DateTime.UtcNow);
+            });
 
-            Console.WriteLine("Example 2: MicrosoftMLTokenizerAdapter\n");
-            PrintChunks(chunks2);
-
+            Console.WriteLine("Example 1: MicrosoftMLTokenizerAdapter\n");
+            PrintChunks(chunks1);
             Console.ReadKey();
         }
 

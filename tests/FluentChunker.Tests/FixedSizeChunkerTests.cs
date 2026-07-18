@@ -2,20 +2,20 @@
 {
     public class FixedSizeChunkerTests
     {
-        private SharpTokenizerAdapter _tokenizer;
         private const string InputText = "A pragmatic developer chooses the least complicated implementation that reliably solves the problem.";
+        private MicrosoftMLTokenizerAdapter _microsoftMLTokenizer;
 
         [SetUp]
         public void SetUp()
         {
-            _tokenizer = new SharpTokenizerAdapter("o200k_base");
+            _microsoftMLTokenizer = new MicrosoftMLTokenizerAdapter("o200k_base");
         }
 
         [Test]
         public void Chunk_TextShorterThanMaxTokens_ReturnsSingleChunk()
         {
             // Arrange
-            var chunker = new FixedSizeChunker(_tokenizer, maxTokens: 20, overlap: 0);
+            var chunker = new FixedSizeChunker(_microsoftMLTokenizer, maxTokens: 20, overlap: 0);
 
             // Act
             var result = chunker.Chunk(InputText);
@@ -32,7 +32,7 @@
         {
             // Arrange
             var longText = string.Join(" ", Enumerable.Repeat(InputText, 10));
-            var chunker = new FixedSizeChunker(_tokenizer, maxTokens: 10, overlap: 0);
+            var chunker = new FixedSizeChunker(_microsoftMLTokenizer, maxTokens: 10, overlap: 0);
 
             // Act
             var result = chunker.Chunk(longText);
@@ -50,7 +50,7 @@
         {
             // Arrange
             var longText = string.Join(" ", Enumerable.Repeat("word", 100));
-            var chunker = new FixedSizeChunker(_tokenizer, maxTokens: 10, overlap: 0);
+            var chunker = new FixedSizeChunker(_microsoftMLTokenizer, maxTokens: 10, overlap: 0);
 
             // Act
             var result = chunker.Chunk(longText);
@@ -67,8 +67,8 @@
         {
             // Arrange
             var longText = string.Join(" ", Enumerable.Repeat(InputText, 10));
-            var withoutOverlap = new FixedSizeChunker(_tokenizer, maxTokens: 20, overlap: 0);
-            var withOverlap = new FixedSizeChunker(_tokenizer, maxTokens: 20, overlap: 5);            
+            var withoutOverlap = new FixedSizeChunker(_microsoftMLTokenizer, maxTokens: 20, overlap: 0);
+            var withOverlap = new FixedSizeChunker(_microsoftMLTokenizer, maxTokens: 20, overlap: 5);            
 
             // Act
             var resultNoOverlap = withoutOverlap.Chunk(longText);
@@ -82,7 +82,7 @@
         public void Chunk_EmptyText_ReturnsEmptyList()
         {
             // Arrange
-            var chunker = new FixedSizeChunker(_tokenizer, maxTokens: 10, overlap: 0);
+            var chunker = new FixedSizeChunker(_microsoftMLTokenizer, maxTokens: 10, overlap: 0);
 
             // Act
             var result = chunker.Chunk("");

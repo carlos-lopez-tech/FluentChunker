@@ -1,4 +1,5 @@
-﻿using FluentChunker.Contracts;
+using FluentChunker.Contracts;
+using System.ComponentModel;
 using System.Text.Json;
 
 namespace FluentChunker
@@ -14,15 +15,18 @@ namespace FluentChunker
             _metadata = metadata;
         }
 
-        public IReadOnlyList<Chunk> Execute(string document)
+        public IReadOnlyList<Chunk> Execute(string document) => Execute(document, null);
+
+        public IReadOnlyList<Chunk> Execute(string document, Action<MetadataBuilder>? configureMetadata)
         {
             var chunks = _chunker.Chunk(document);
+            var metadata = BuildEffectiveMetadata(configureMetadata);
 
-            if (_metadata is { Count: > 0 })
+            if (metadata is { Count: > 0 })
             {
                 foreach (var chunk in chunks)
                 {
-                    foreach (var kvp in _metadata)
+                    foreach (var kvp in metadata)
                     {
                         chunk.Metadata[kvp.Key] = kvp.Value;
                     }
@@ -32,46 +36,60 @@ namespace FluentChunker
             return chunks;
         }
 
-        public class Builder
+        private Dictionary<string, JsonElement> BuildEffectiveMetadata(Action<MetadataBuilder>? configureMetadata)
+        {
+            if (configureMetadata is null)
+                return _metadata;
+
+            var metadataBuilder = new MetadataBuilder();
+            configureMetadata(metadataBuilder);
+            var documentMetadata = metadataBuilder.Build();
+
+            // merged locally so the pipeline stays immutable - document values must not leak into later Execute calls
+            var merged = new Dictionary<string, JsonElement>(_metadata);
+            foreach (var kvp in documentMetadata)
+            {
+                merged[kvp.Key] = kvp.Value;
+            }
+
+            return merged;
+        }
+
+        public class Builder : ITokenizerStep, ISplitterStep, IOptionalStep
         {
             private ITokenizer? _tokenizer;
             private IChunker? _chunker;
             private Action<MetadataBuilder>? _metadata;
 
-            public Builder UseTokenizer(ITokenizer tokenizer)
+            private Builder()
             {
+
+            }
+
+            public static ITokenizerStep Initialize() => new Builder();
+
+            public ISplitterStep UseTokenizer(ITokenizer tokenizer)
+            {
+                ArgumentNullException.ThrowIfNull(tokenizer);
                 _tokenizer = tokenizer;
                 return this;
             }
 
-            public Builder ByFixedSize(int maxTokens, int overlap = 0)
+            public IOptionalStep UseSplitter(Action<Splitter.Builder> buildSplitterAction)
             {
-                ArgumentNullException.ThrowIfNull(_tokenizer);
-                _chunker = new FixedSizeChunker(_tokenizer, maxTokens, overlap);
+                ArgumentNullException.ThrowIfNull(buildSplitterAction);
+
+                var splitterBuilder = new Splitter.Builder(_tokenizer!);
+                buildSplitterAction(splitterBuilder);
+                _chunker = splitterBuilder.Build();
+
                 return this;
             }
 
-            //public Builder ByRecursive()
-            //{
-            //    _chunkerFactory = () => new RecursiveChunker(_tokenizer!);
-            //    return this;
-            //}
-
-            //public Builder BySentence()
-            //{
-            //    _chunkerFactory = () => new SentenceChunker(_tokenizer!);
-            //    return this;
-            //}
-
-            //public Builder WithOverlap(int overlap)
-            //{
-            //    _overlap = overlap;
-            //    return this;
-            //}
-
-            public Builder WithMetadata(Action<MetadataBuilder> configure)
+            public IOptionalStep WithMetadata(Action<MetadataBuilder> configure)
             {
-                _metadata = configure;
+                ArgumentNullException.ThrowIfNull(configure);
+                _metadata += configure;
                 return this;
             }
 
@@ -90,5 +108,28 @@ namespace FluentChunker
                 return new ChunkingPipeline(_chunker, metadata);
             }
         }
+    }
+
+    [EditorBrowsable(EditorBrowsableState.Never)]
+    public interface ITokenizerStep
+    {
+        ISplitterStep UseTokenizer(ITokenizer tokenizer);
+    }
+
+    [EditorBrowsable(EditorBrowsableState.Never)]
+    public interface ISplitterStep
+    {
+        IOptionalStep UseSplitter(Action<Splitter.Builder> buildSplitterAction);
+    }
+
+    [EditorBrowsable(EditorBrowsableState.Never)]
+    public interface IOptionalStep
+    {
+        IOptionalStep WithMetadata(Action<MetadataBuilder> configure);
+
+        //IOptionalStep UseTransform(Action<Transform.Builder> buildTransformAction);
+        //IOptionalStep UseEnrichment(Action<Enrichment.Builder> buildEnrichmentAction);
+
+        ChunkingPipeline Build();
     }
 }
