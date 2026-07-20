@@ -3,15 +3,13 @@
 ##
 ## Get latest from https://github.com/github/gitignore/blob/master/VisualStudio.gitignore
 
-# AI-specific files
+# User-specific files
 .copilot-instructions.md
 CLAUDE.md
 .mcp.json
 .serena/
 .claude/
 docs/
-
-# User-specific files
 *.rsuser
 *.suo
 *.user

@@ -6,7 +6,8 @@ Split text into meaningful chunks for RAG (Retrieval-Augmented Generation), embe
 ## Features
 
 - **Stepped Builder API** — Chain-based pipeline configuration with clear, expressive syntax; the step order is enforced at compile time
-- **Fixed-size chunking** — Split text into windows of at most N tokens (sentence-aware and structure-aware strategies planned)
+- **Fixed-size chunking** — Split text into windows of at most N tokens (structure-aware strategy planned)
+- **Sentence-aware chunking** (also known as sentence-based chunking) — Pack whole sentences into token-bounded chunks; never cuts mid-sentence except for a token-window fallback on sentences that alone exceed the budget
 - **Token-aware chunking** — Split text by token count with accurate token counting
 - **Customizable tokenizers** — Plug in your own tokenizer implementation or use built-in Microsoft.ML.Tokenizers, SharpToken integration
 - **Overlap support** — Configure token overlap between chunks to preserve context; overlap is budgeted inside the max token size, so chunks never exceed it
@@ -85,6 +86,31 @@ var pipeline = ChunkingPipeline.Builder.Initialize()
 
 var chunks = pipeline.Execute(text);
 ```
+
+### Sentence-Aware Chunking
+
+```csharp
+var tokenizer = new MicrosoftMLTokenizerAdapter("o200k_base");
+
+var pipeline = ChunkingPipeline.Builder.Initialize()
+    .UseTokenizer(tokenizer)
+    .UseSplitter(s => s
+        .WithSentenceAwareChunking()
+        .WithMaxTokenSize(512)
+        .WithOverlap(50)
+        .WithAbbreviations("Vgl.", "sog."))   // optional, additive to the built-in list
+    .Build();
+
+var chunks = pipeline.Execute(document);
+```
+
+Chunks contain whole sentences and are verbatim slices of the source text — whitespace and paragraph breaks between packed sentences are preserved exactly, not re-joined or trimmed. Every chunk's `TokenCount` stays within the configured max: a sentence that alone exceeds the budget is split into evenly-sized token windows as a fallback (with `OverlapCount = 0` on those windows). Note that fallback windows are *decoded from tokens*, not verbatim slices — their text can carry a leading space from the tokenizer, so trim before joining chunk texts if that matters to you.
+
+`WithOverlap(n)` carries whole trailing sentences into the next chunk, as many as fit within `n` tokens. `OverlapCount` reports the tokens carried *into* a chunk (0 on the first chunk) — the same semantics both strategies use.
+
+**Language support:** works for any language using `. ! ?` as sentence terminators with a bicameral script (Latin, Greek, Cyrillic) — covers all European and North/South American languages. Uppercase detection is Unicode-aware, and `¿ ¡ « „` are recognized as valid sentence openers (Spanish/French/German). A built-in abbreviation guard covers common EN/DE/FR/ES abbreviations (`Dr`, `Mr`, `Nr`, `bzw`, `M`, `Sra`, etc.); extend it with `.WithAbbreviations(...)` — entries may include a trailing dot, matching is case-insensitive.
+
+**Known limitations:** German ordinal periods (e.g. "am 3. Oktober") are falsely split — no code disambiguates them from sentence ends. CJK terminators (`。`) aren't recognized; such text is treated as one long sentence and falls back to fixed-size-style token windowing.
 
 ### Adding Custom Metadata
 
@@ -206,8 +232,10 @@ The builder is stepped — each method returns the next step, so the order below
 Also stepped, in this order:
 
 - `.WithFixedSizeChunking()` — Select the fixed-size strategy
+- `.WithSentenceAwareChunking()` — Select the sentence-aware strategy (peer of `WithFixedSizeChunking`)
 - `.WithMaxTokenSize(int maxTokens)` — Maximum tokens per chunk (must be positive)
 - `.WithOverlap(int overlap)` — Optional: tokens shared between consecutive chunks (must be non-negative and smaller than the max token size; budgeted inside it, not added on top)
+- `.WithAbbreviations(params string[] abbreviations)` — Optional, sentence-aware only: additional abbreviations (beyond the built-in EN/DE/FR/ES set) that should not be treated as sentence endings; entries may include a trailing dot, matching is case-insensitive. Has no effect when combined with `WithFixedSizeChunking()`.
 
 ### ChunkingPipeline
 
@@ -220,7 +248,7 @@ Each chunk contains:
 - `Index` — Zero-based position in the chunk sequence (resets per `Execute` call)
 - `Text` — The actual chunk content
 - `TokenCount` — Number of tokens in this chunk
-- `OverlapCount` — Trailing tokens this chunk shares with the next chunk (`0` on the last chunk)
+- `OverlapCount` — Tokens carried into this chunk from the previous chunk (`0` on the first chunk)
 - `Metadata` — Dictionary of custom key-value pairs as `JsonElement` (access with e.g. `chunk.Metadata["Source"].GetString()`)
 
 ### ITokenizer
@@ -234,7 +262,7 @@ Implement to use custom tokenization:
 
 - .NET 10.0 or later
 - Microsoft.ML.Tokenizers 2.0.0 or later (included as dependency)
-- - SharpToken 2.0.6 or later (included as dependency)
+- SharpToken 2.0.6 or later (included as dependency)
 
 ## Development
 

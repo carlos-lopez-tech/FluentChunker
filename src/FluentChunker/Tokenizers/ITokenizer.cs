@@ -1,4 +1,4 @@
-namespace FluentChunker
+namespace FluentChunker.Tokenizers
 {
     public interface ITokenizer
     {

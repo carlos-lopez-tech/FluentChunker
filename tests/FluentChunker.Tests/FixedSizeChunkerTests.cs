@@ -1,4 +1,7 @@
-﻿namespace FluentChunker.Tests
+﻿using FluentChunker.Chunkers.FixedSize;
+using FluentChunker.Tokenizers;
+
+namespace FluentChunker.Tests
 {
     public class FixedSizeChunkerTests
     {
@@ -22,9 +25,12 @@
 
             // Assert
             Assert.That(result, Has.Count.EqualTo(1));
-            Assert.That(result[0].Index, Is.EqualTo(0));
-            Assert.That(result[0].Text, Is.EqualTo(InputText));
-            Assert.That(result[0].TokenCount, Is.LessThanOrEqualTo(20));
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(result[0].Index, Is.Zero);
+                Assert.That(result[0].Text, Is.EqualTo(InputText));
+                Assert.That(result[0].TokenCount, Is.LessThanOrEqualTo(20));
+            }
         }
 
         [Test]
@@ -76,6 +82,25 @@
 
             // Assert
             Assert.That(resultWithOverlap, Has.Count.GreaterThan(resultNoOverlap.Count));
+        }
+
+        [Test]
+        public void Chunk_WithOverlap_StampsCarriedTokensOnReceivingChunk()
+        {
+            // Arrange
+            var longText = string.Join(" ", Enumerable.Repeat(InputText, 10));
+            var chunker = new FixedSizeChunker(_microsoftMLTokenizer, maxTokens: 20, overlap: 5);
+
+            // Act
+            var result = chunker.Chunk(longText);
+
+            // Assert — OverlapCount reports tokens carried INTO a chunk (aligned with SentenceAwareChunker)
+            Assert.That(result, Has.Count.GreaterThan(1));
+            Assert.That(result[0].OverlapCount, Is.Zero);
+            for (var i = 1; i < result.Count; i++)
+            {
+                Assert.That(result[i].OverlapCount, Is.EqualTo(5));
+            }
         }
 
         [Test]

@@ -1,3 +1,5 @@
+using FluentChunker.Tokenizers;
+
 namespace FluentChunker.Tests
 {
     public class ChunkingPipelineTests
@@ -30,12 +32,15 @@ namespace FluentChunker.Tests
 
             // Assert
             Assert.That(chunks, Has.Count.EqualTo(2));
-            Assert.That(chunks[0].Text, Is.Not.Empty);
-            Assert.That(chunks[0].TokenCount, Is.EqualTo(10));
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(chunks[0].Text, Is.Not.Empty);
+                Assert.That(chunks[0].TokenCount, Is.EqualTo(10));
+            }
         }
 
         [Test]
-        public void Execute_FixedSizeSplitterWithOverlap_MarksOverlapOnAllButLastChunk()
+        public void Execute_FixedSizeSplitterWithOverlap_MarksOverlapOnReceivingChunks()
         {
             // Arrange
             var pipeline = ChunkingPipeline.Builder.Initialize()
@@ -49,10 +54,29 @@ namespace FluentChunker.Tests
             // Act
             var chunks = pipeline.Execute(InputText);
 
-            // Assert
+            // Assert — OverlapCount reports tokens carried INTO a chunk: 0 on the first,
+            // the overlap on every following chunk (same semantics as SentenceAwareChunker)
             Assert.That(chunks, Has.Count.GreaterThan(1));
-            Assert.That(chunks[0].OverlapCount, Is.EqualTo(2));
-            Assert.That(chunks[^1].OverlapCount, Is.EqualTo(0));
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(chunks[0].OverlapCount, Is.Zero);
+                Assert.That(chunks[^1].OverlapCount, Is.EqualTo(2));
+            }
+        }
+
+        [Test]
+        public void Execute_NullDocument_ThrowsArgumentNullException()
+        {
+            // Arrange
+            var pipeline = ChunkingPipeline.Builder.Initialize()
+                .UseTokenizer(_sharpTokenizer)
+                .UseSplitter(s => s
+                    .WithFixedSizeChunking()
+                    .WithMaxTokenSize(10))
+                .Build();
+
+            // Act & Assert
+            Assert.Throws<ArgumentNullException>(() => pipeline.Execute(null!));
         }
 
         [Test]
@@ -81,9 +105,12 @@ namespace FluentChunker.Tests
             var chunks2 = pipeline2.Execute(InputText);
 
             // Assert
-            Assert.That(chunks1[0].Metadata["Version"].GetString(), Is.EqualTo("1"));
-            Assert.That(chunks2[0].Metadata["Version"].GetString(), Is.EqualTo("2"));
-            Assert.That(chunks1, Has.Count.GreaterThan(chunks2.Count));
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(chunks1[0].Metadata["Version"].GetString(), Is.EqualTo("1"));
+                Assert.That(chunks2[0].Metadata["Version"].GetString(), Is.EqualTo("2"));
+                Assert.That(chunks1, Has.Count.GreaterThan(chunks2.Count));
+            }   
         }
 
         [Test]

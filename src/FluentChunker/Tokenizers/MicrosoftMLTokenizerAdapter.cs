@@ -1,15 +1,10 @@
 using Microsoft.ML.Tokenizers;
 
-namespace FluentChunker
+namespace FluentChunker.Tokenizers
 {
-    public sealed class MicrosoftMLTokenizerAdapter : ITokenizer
+    public sealed class MicrosoftMLTokenizerAdapter(string encodingName) : ITokenizer
     {
-        private readonly Tokenizer _tokenizer;
-
-        public MicrosoftMLTokenizerAdapter(string encodingName)
-        {
-            _tokenizer = TiktokenTokenizer.CreateForEncoding(encodingName);
-        }
+        private readonly Tokenizer _tokenizer = TiktokenTokenizer.CreateForEncoding(encodingName);
 
         public IReadOnlyList<int> Encode(string text) => _tokenizer.EncodeToIds(text);
 

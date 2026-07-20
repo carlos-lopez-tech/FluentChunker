@@ -1,4 +1,5 @@
 using FluentChunker.Contracts;
+using FluentChunker.Tokenizers;
 using System.ComponentModel;
 using System.Text.Json;
 
@@ -19,6 +20,8 @@ namespace FluentChunker
 
         public IReadOnlyList<Chunk> Execute(string document, Action<MetadataBuilder>? configureMetadata)
         {
+            ArgumentNullException.ThrowIfNull(document);
+
             var chunks = _chunker.Chunk(document);
             var metadata = BuildEffectiveMetadata(configureMetadata);
 
@@ -66,6 +69,11 @@ namespace FluentChunker
 
             }
 
+            /// <summary>
+            /// Starts building a <see cref="ChunkingPipeline"/>. The builder guides you through the
+            /// required steps in order: tokenizer, then splitter, then optional metadata.
+            /// </summary>
+            /// <returns>The first step, which requires a tokenizer.</returns>
             public static ITokenizerStep Initialize() => new Builder();
 
             public ISplitterStep UseTokenizer(ITokenizer tokenizer)
@@ -113,23 +121,49 @@ namespace FluentChunker
     [EditorBrowsable(EditorBrowsableState.Never)]
     public interface ITokenizerStep
     {
+        /// <summary>
+        /// Sets the tokenizer used to count tokens when sizing chunks.
+        /// </summary>
+        /// <param name="tokenizer">The tokenizer implementation (e.g. a SharpToken or Microsoft.ML.Tokenizers adapter).</param>
+        /// <returns>The next step, which requires a splitter.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="tokenizer"/> is null.</exception>
         ISplitterStep UseTokenizer(ITokenizer tokenizer);
     }
 
     [EditorBrowsable(EditorBrowsableState.Never)]
     public interface ISplitterStep
     {
+        /// <summary>
+        /// Configures how documents are split into chunks: the chunking strategy,
+        /// maximum chunk size in tokens, and optional overlap.
+        /// </summary>
+        /// <param name="buildSplitterAction">Configures the splitter, e.g.
+        /// <c>s => s.WithSentenceAwareChunking().WithMaxTokenSize(200).WithOverlap(20)</c>.</param>
+        /// <returns>The optional step, from which the pipeline can be built.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="buildSplitterAction"/> is null.</exception>
         IOptionalStep UseSplitter(Action<Splitter.Builder> buildSplitterAction);
     }
 
     [EditorBrowsable(EditorBrowsableState.Never)]
     public interface IOptionalStep
     {
+        /// <summary>
+        /// Adds pipeline-level metadata that is stamped onto every chunk of every document.
+        /// Calling this multiple times composes: all configured entries are applied, with
+        /// later registrations overwriting earlier ones on key collisions.
+        /// </summary>
+        /// <param name="configure">Populates the metadata entries.</param>
+        /// <returns>The same step, for further optional configuration.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="configure"/> is null.</exception>
         IOptionalStep WithMetadata(Action<MetadataBuilder> configure);
 
         //IOptionalStep UseTransform(Action<Transform.Builder> buildTransformAction);
         //IOptionalStep UseEnrichment(Action<Enrichment.Builder> buildEnrichmentAction);
 
+        /// <summary>
+        /// Creates the immutable <see cref="ChunkingPipeline"/> from the configured steps.
+        /// The pipeline can be reused across documents via <see cref="ChunkingPipeline.Execute(string)"/>.
+        /// </summary>
         ChunkingPipeline Build();
     }
 }

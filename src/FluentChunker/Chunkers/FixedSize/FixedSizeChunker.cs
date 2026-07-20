@@ -1,6 +1,7 @@
 using FluentChunker.Contracts;
+using FluentChunker.Tokenizers;
 
-namespace FluentChunker
+namespace FluentChunker.Chunkers.FixedSize
 {
     /// <summary>
     /// Splits a document into fixed-size token windows of at most <c>maxTokens</c> tokens,
@@ -28,33 +29,21 @@ namespace FluentChunker
                 return [new Chunk { Index = 0, Text = text, TokenCount = allTokens.Count }];
 
             var chunks = new List<Chunk>();
-            var step = _maxTokens - _overlap;
             var index = 0;
 
-            for (var start = 0; start < allTokens.Count; start += step)
+            foreach (var (start, length) in TokenWindows.Strided(allTokens.Count, _maxTokens, _maxTokens - _overlap))
             {
-                var end = Math.Min(start + _maxTokens, allTokens.Count);
-                var length = end - start;
-
-                var window = new int[length];
-
-                for (var i = 0; i < length; i++)
-                {
-                    window[i] = allTokens[start + i];
-                }
-
-                var isLast = end == allTokens.Count;
+                var window = TokenWindows.Slice(allTokens, start, length);
 
                 chunks.Add(new Chunk
                 {
                     Index = index++,
                     Text = _tokenizer.Decode(window),
                     TokenCount = length,
-                    OverlapCount = isLast ? 0 : _overlap
+                    // Tokens carried into this chunk from the previous one; the final window can
+                    // be shorter than the overlap, in which case it is carried content entirely.
+                    OverlapCount = index == 1 ? 0 : Math.Min(_overlap, length)
                 });
-
-                if (isLast)
-                    break;
             }
 
             return chunks;

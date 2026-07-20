@@ -1,3 +1,5 @@
+using FluentChunker.Tokenizers;
+
 namespace FluentChunker.Tests
 {
     public class ChunkingPipelineMetadataTests
@@ -35,12 +37,15 @@ namespace FluentChunker.Tests
 
             // Assert
             Assert.That(chunks, Has.Count.EqualTo(2));
-            Assert.That(chunks[0].Text, Is.Not.Empty);
-            Assert.That(chunks[0].TokenCount, Is.EqualTo(10));
-            Assert.That(chunks[0].Metadata["Source"].GetString(), Is.EqualTo("test.md"));
-            Assert.That(chunks[0].Metadata["Author"].GetString(), Is.EqualTo("Carlos Lopez Vaguez"));
-            Assert.That(chunks[0].Metadata["Date"].GetString(), Is.Not.Empty);
-            Assert.That(chunks[0].Metadata["Numeric"].GetInt32(), Is.EqualTo(1));
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(chunks[0].Text, Is.Not.Empty);
+                Assert.That(chunks[0].TokenCount, Is.EqualTo(10));
+                Assert.That(chunks[0].Metadata["Source"].GetString(), Is.EqualTo("test.md"));
+                Assert.That(chunks[0].Metadata["Author"].GetString(), Is.EqualTo("Carlos Lopez Vaguez"));
+                Assert.That(chunks[0].Metadata["Date"].GetString(), Is.Not.Empty);
+                Assert.That(chunks[0].Metadata["Numeric"].GetInt32(), Is.EqualTo(1));
+            }
         }
 
         [Test]
@@ -81,9 +86,13 @@ namespace FluentChunker.Tests
             // Act
             var chunks = pipeline.Execute(InputText);
 
-            // Assert
+            // Assert — first chunk receives nothing; every following chunk receives the overlap
             Assert.That(chunks, Has.Count.GreaterThan(1));
-            Assert.That(chunks[0].OverlapCount, Is.EqualTo(1));
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(chunks[0].OverlapCount, Is.Zero);
+                Assert.That(chunks[1].OverlapCount, Is.EqualTo(1));
+            }
             foreach (var chunk in chunks)
             {
                 Assert.That(chunk.Metadata["Source"].GetString(), Is.EqualTo("overlap-test"));
@@ -107,8 +116,11 @@ namespace FluentChunker.Tests
             var chunks = pipeline.Execute(InputText);
 
             // Assert
-            Assert.That(chunks[0].Metadata["Source"].GetString(), Is.EqualTo("first.md"));
-            Assert.That(chunks[0].Metadata["Author"].GetString(), Is.EqualTo("Carlos Lopez Vaguez"));
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(chunks[0].Metadata["Source"].GetString(), Is.EqualTo("first.md"));
+                Assert.That(chunks[0].Metadata["Author"].GetString(), Is.EqualTo("Carlos Lopez Vaguez"));
+            }
         }
 
         [Test]
@@ -133,8 +145,11 @@ namespace FluentChunker.Tests
             Assert.That(chunks, Has.Count.GreaterThan(1));
             foreach (var chunk in chunks)
             {
-                Assert.That(chunk.Metadata["Url"].GetString(), Is.EqualTo("https://carloslopez.tech/doc-1"));
-                Assert.That(chunk.Metadata["Title"].GetString(), Is.EqualTo("Document One"));
+                using (Assert.EnterMultipleScope())
+                {
+                    Assert.That(chunk.Metadata["Url"].GetString(), Is.EqualTo("https://carloslopez.tech/doc-1"));
+                    Assert.That(chunk.Metadata["Title"].GetString(), Is.EqualTo("Document One"));
+                }
             }
         }
 
@@ -154,8 +169,11 @@ namespace FluentChunker.Tests
             var chunks = pipeline.Execute(InputText, meta => meta.Set("Url", "https://carloslopez.tech/doc-1"));
 
             // Assert
-            Assert.That(chunks[0].Metadata["SourceType"].GetString(), Is.EqualTo("wiki"));
-            Assert.That(chunks[0].Metadata["Url"].GetString(), Is.EqualTo("https://carloslopez.tech/doc-1"));
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(chunks[0].Metadata["SourceType"].GetString(), Is.EqualTo("wiki"));
+                Assert.That(chunks[0].Metadata["Url"].GetString(), Is.EqualTo("https://carloslopez.tech/doc-1"));
+            }
         }
 
         [Test]
@@ -194,9 +212,12 @@ namespace FluentChunker.Tests
             var chunksDoc3 = pipeline.Execute(InputText);
 
             // Assert
-            Assert.That(chunksDoc1[0].Metadata["Url"].GetString(), Is.EqualTo("https://carloslopez.tech/doc-1"));
-            Assert.That(chunksDoc2[0].Metadata["Url"].GetString(), Is.EqualTo("https://carloslopez.tech/doc-2"));
-            Assert.That(chunksDoc3[0].Metadata, Is.Empty);
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(chunksDoc1[0].Metadata["Url"].GetString(), Is.EqualTo("https://carloslopez.tech/doc-1"));
+                Assert.That(chunksDoc2[0].Metadata["Url"].GetString(), Is.EqualTo("https://carloslopez.tech/doc-2"));
+                Assert.That(chunksDoc3[0].Metadata, Is.Empty);
+            }
         }
     }
 }

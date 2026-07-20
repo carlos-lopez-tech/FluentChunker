@@ -1,3 +1,5 @@
+using FluentChunker.Tokenizers;
+
 namespace FluentChunker.Tests
 {
     public class MicrosoftMLTokenizerAdapterTests

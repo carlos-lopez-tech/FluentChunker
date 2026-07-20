@@ -1,6 +1,4 @@
-using FluentChunker.Contracts;
-
-namespace FluentChunker
+namespace FluentChunker.Contracts
 {
     public interface IChunker
     {

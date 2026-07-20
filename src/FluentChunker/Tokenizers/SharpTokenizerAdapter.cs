@@ -1,15 +1,10 @@
 using SharpToken;
 
-namespace FluentChunker
+namespace FluentChunker.Tokenizers
 {
-    public sealed class SharpTokenizerAdapter : ITokenizer
+    public sealed class SharpTokenizerAdapter(string encodingName) : ITokenizer
     {
-        private readonly GptEncoding _tokenizer;
-
-        public SharpTokenizerAdapter(string encodingName)
-        {
-            _tokenizer = GptEncoding.GetEncoding(encodingName);
-        }
+        private readonly GptEncoding _tokenizer = GptEncoding.GetEncoding(encodingName);
 
         public int CountTokens(string text) => _tokenizer.CountTokens(text);
 
