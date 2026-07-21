@@ -6,8 +6,9 @@ Split text into meaningful chunks for RAG (Retrieval-Augmented Generation), embe
 ## Features
 
 - **Stepped Builder API** — Chain-based pipeline configuration with clear, expressive syntax; the step order is enforced at compile time
-- **Fixed-size chunking** — Split text into windows of at most N tokens (structure-aware strategy planned)
+- **Fixed-size chunking** — Split text into windows of at most N tokens
 - **Sentence-aware chunking** (also known as sentence-based chunking) — Pack whole sentences into token-bounded chunks; never cuts mid-sentence except for a token-window fallback on sentences that alone exceed the budget
+- **Recursive chunking** — Split along a fixed structural hierarchy (paragraphs, then lines, then sentences), descending a level only for pieces that exceed the budget; chunks respect the largest structural boundary possible
 - **Token-aware chunking** — Split text by token count with accurate token counting
 - **Customizable tokenizers** — Plug in your own tokenizer implementation or use built-in Microsoft.ML.Tokenizers, SharpToken integration
 - **Overlap support** — Configure token overlap between chunks to preserve context; overlap is budgeted inside the max token size, so chunks never exceed it
@@ -111,6 +112,29 @@ Chunks contain whole sentences and are verbatim slices of the source text — wh
 **Language support:** works for any language using `. ! ?` as sentence terminators with a bicameral script (Latin, Greek, Cyrillic) — covers all European and North/South American languages. Uppercase detection is Unicode-aware, and `¿ ¡ « „` are recognized as valid sentence openers (Spanish/French/German). A built-in abbreviation guard covers common EN/DE/FR/ES abbreviations (`Dr`, `Mr`, `Nr`, `bzw`, `M`, `Sra`, etc.); extend it with `.WithAbbreviations(...)` — entries may include a trailing dot, matching is case-insensitive.
 
 **Known limitations:** German ordinal periods (e.g. "am 3. Oktober") are falsely split — no code disambiguates them from sentence ends. CJK terminators (`。`) aren't recognized; such text is treated as one long sentence and falls back to fixed-size-style token windowing.
+
+### Recursive Chunking
+
+```csharp
+var tokenizer = new MicrosoftMLTokenizerAdapter("o200k_base");
+
+var pipeline = ChunkingPipeline.Builder.Initialize()
+    .UseTokenizer(tokenizer)
+    .UseSplitter(s => s
+        .WithRecursiveChunking()
+        .WithMaxTokenSize(512)
+        .WithOverlap(64)
+        .WithAbbreviations("Vgl.", "sog."))   // optional, feeds the sentence tier
+    .Build();
+
+var chunks = pipeline.Execute(document);
+```
+
+The document is split along a fixed hierarchy of structural separators: **paragraphs** (blank-line separated), then **lines**, then **sentences** (using the same abbreviation-aware detection as sentence-aware chunking), then **balanced token windows** as a last resort. Only a unit that *alone* exceeds the max token size descends to the next level; adjacent small units are packed together up to the budget. Chunks never merge across a descent boundary: a small paragraph before or after an oversized one always stays in its own chunk, so every chunk respects the largest structural boundary possible.
+
+Chunks are verbatim slices of the source (interior line breaks preserved); only token-window fallback chunks are decoded from tokens and may carry a leading space, exactly like the sentence-aware fallback.
+
+`WithOverlap(n)` carries whole trailing units (paragraphs, lines or sentences) into the next chunk, as many as fit within `n` tokens. Overlap applies *within* a packing run and **resets to zero at every structural seam** (before the first chunk inside an oversized unit, after the last one, and around token-window fallbacks), so carried context always comes from the same structural region. `OverlapCount` reports the tokens carried *into* a chunk (0 on the first chunk and wherever a seam resets it).
 
 ### Adding Custom Metadata
 
@@ -233,9 +257,10 @@ Also stepped, in this order:
 
 - `.WithFixedSizeChunking()` — Select the fixed-size strategy
 - `.WithSentenceAwareChunking()` — Select the sentence-aware strategy (peer of `WithFixedSizeChunking`)
+- `.WithRecursiveChunking()` — Select the recursive strategy (paragraphs, then lines, then sentences, then token windows), descending only for oversized pieces (peer of the other two strategy methods)
 - `.WithMaxTokenSize(int maxTokens)` — Maximum tokens per chunk (must be positive)
 - `.WithOverlap(int overlap)` — Optional: tokens shared between consecutive chunks (must be non-negative and smaller than the max token size; budgeted inside it, not added on top)
-- `.WithAbbreviations(params string[] abbreviations)` — Optional, sentence-aware only: additional abbreviations (beyond the built-in EN/DE/FR/ES set) that should not be treated as sentence endings; entries may include a trailing dot, matching is case-insensitive. Has no effect when combined with `WithFixedSizeChunking()`.
+- `.WithAbbreviations(params string[] abbreviations)` — Optional: additional abbreviations (beyond the built-in EN/DE/FR/ES set) that should not be treated as sentence endings; entries may include a trailing dot, matching is case-insensitive. Used by the strategies with a sentence tier (`WithSentenceAwareChunking()` and `WithRecursiveChunking()`); has no effect when combined with `WithFixedSizeChunking()`.
 
 ### ChunkingPipeline
 

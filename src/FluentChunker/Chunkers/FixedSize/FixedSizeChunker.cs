@@ -31,6 +31,8 @@ namespace FluentChunker.Chunkers.FixedSize
             var chunks = new List<Chunk>();
             var index = 0;
 
+            // Slide a window of maxTokens across the token list, stepping forward by
+            // (maxTokens - overlap) so each window shares exactly overlap tokens with the previous one.
             foreach (var (start, length) in TokenWindows.Strided(allTokens.Count, _maxTokens, _maxTokens - _overlap))
             {
                 var window = TokenWindows.Slice(allTokens, start, length);

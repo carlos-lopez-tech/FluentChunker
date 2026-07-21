@@ -3,6 +3,13 @@ using FluentChunker.Tokenizers;
 
 namespace FluentChunker.Chunkers.SentenceAware
 {
+    /// <summary>
+    /// Splits a document along sentence boundaries, greedily packing whole sentences into
+    /// chunks of at most <c>maxTokens</c> tokens so no chunk ever cuts a sentence in half.
+    /// When <c>overlap</c> is set, each new chunk begins with the last whole sentences of the
+    /// previous one, as many as fit the overlap budget. A single sentence that exceeds the
+    /// budget on its own cannot be kept whole and falls back to fixed token windows.
+    /// </summary>
     public class SentenceAwareChunker(
         ITokenizer tokenizer, 
         int maxTokens, 
@@ -28,14 +35,19 @@ namespace FluentChunker.Chunkers.SentenceAware
             var chunks = new List<Chunk>();
             var chunkSentences = new List<int>();
             var chunkTokens = 0;
+            var chunkOverlap = 0;
             var index = 0;
 
-            var chunkOverlap = 0;
-
+            // Walk the sentences left to right, appending each to the current chunk until the
+            // next one would push it over the token budget, then start a new chunk.
             for (var i = 0; i < sentences.Count; i++)
             {
                 if (tokenCounts[i] > _maxTokens)
                 {
+                    // This sentence is over budget on its own. 
+                    // Flush whatever is buffered, split just this sentence into token windows, 
+                    // then continue with an empty buffer so the sentences around it never merge into those windows and
+                    // no overlap is carried across the gap.
                     FlushChunk(text, sentences, chunkSentences, chunkOverlap, chunks, ref index);
                     chunkSentences.Clear();
                     chunkTokens = 0;
@@ -47,6 +59,9 @@ namespace FluentChunker.Chunkers.SentenceAware
 
                 if (chunkSentences.Count > 0 && chunkTokens + tokenCounts[i] > _maxTokens)
                 {
+                    // Adding this sentence would overflow the budget. 
+                    // Flush the current chunk, then seed the next one with the last whole sentences of the flushed chunk 
+                    // (the overlap) before adding the incoming sentence below.
                     FlushChunk(text, sentences, chunkSentences, chunkOverlap, chunks, ref index);
 
                     var (seed, seedTokens) = SeedNextChunk(chunkSentences, tokenCounts);
@@ -67,8 +82,8 @@ namespace FluentChunker.Chunkers.SentenceAware
             return chunks;
         }
 
-        // Seed the next chunk with whole trailing sentences from the just-flushed chunk,
-        // walking backward within the overlap budget.
+        // Builds the overlap the next chunk will start with: the last whole sentences of the
+        // chunk just flushed, taken from the end backward, as many as fit the overlap budget.
         private (List<int> Seed, int SeedTokens) SeedNextChunk(List<int> flushedSentences, int[] tokenCounts)
         {
             var seed = new List<int>();
@@ -86,8 +101,9 @@ namespace FluentChunker.Chunkers.SentenceAware
             return (seed, seedTokens);
         }
 
-        // If the seed leaves no room for the incoming sentence, drop from the front until it fits —
-        // the budget invariant always wins over overlap.
+        // The overlap sentences plus the incoming sentence may not fit the chunk budget together.
+        // If they don't, drop overlap sentences from the front until they do. 
+        // Staying within the budget always takes priority over keeping overlap.
         private void TrimSeedToFit(List<int> seed, ref int chunkTokens, ref int chunkOverlap,
             int incomingTokenCount, int[] tokenCounts)
         {
@@ -99,8 +115,10 @@ namespace FluentChunker.Chunkers.SentenceAware
             }
         }
 
-        // Each sentence is counted together with the whitespace gap that precedes it,
-        // because that gap ends up inside the chunk slice (see plan note on gap-inclusive counts).
+        // Counts the tokens of each sentence. 
+        // From the second sentence onward the count includes the whitespace between it and the previous sentence, 
+        // because a chunk is later sliced as one continuous span and that in-between whitespace ends up inside the slice. 
+        // Counting it here keeps the packing decision honest about the chunk's real size.
         private int[] CountSentenceTokens(string text, IReadOnlyList<SentenceSpan> sentences)
         {
             var tokenCounts = new int[sentences.Count];
@@ -114,9 +132,10 @@ namespace FluentChunker.Chunkers.SentenceAware
             return tokenCounts;
         }
 
-        // A sentence that alone exceeds the budget cannot be kept whole: split it into
-        // evenly-sized token windows (no overlap between them). Balanced sizing avoids
-        // a tiny remainder window — e.g. a lone "." chunk — that a fixed stride would leave.
+        // A sentence that alone exceeds the budget has no smaller boundary to split on, so cut it into token windows instead. 
+        // The windows are sized as evenly as possible (rather than filling each to the max and leaving a tiny last one, such as a lone "." chunk) and do not overlap. 
+        // Unlike every other chunk, this text is rebuilt from tokens instead of sliced from the source, 
+        // so it may gain a leading space that the tokenizer attaches to the first word.
         private void EmitOversizedSentence(string text, SentenceSpan sentence, List<Chunk> chunks, ref int index)
         {
             var tokens = _tokenizer.Encode(text.Substring(sentence.Start, sentence.Length));

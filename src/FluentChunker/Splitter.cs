@@ -1,4 +1,5 @@
 using FluentChunker.Chunkers.FixedSize;
+using FluentChunker.Chunkers.Recursive;
 using FluentChunker.Chunkers.SentenceAware;
 using FluentChunker.Contracts;
 using FluentChunker.Tokenizers;
@@ -42,10 +43,24 @@ namespace FluentChunker
                 return new ChunkingStrategyStep(this);
             }
 
+            /// <summary>
+            /// Splits the document along a fixed hierarchy of structural separators — paragraphs,
+            /// then lines, then sentences — descending a level only for pieces that exceed the max
+            /// token count. Adjacent small units are packed together up to the budget; chunks never
+            /// merge across a descent boundary, and overlap resets to zero there. A sentence that
+            /// alone exceeds the max falls back to evenly balanced token windows.
+            /// </summary>
+            /// <returns>The next step, which requires a max token size.</returns>
+            public ChunkingStrategyStep WithRecursiveChunking()
+            {
+                _chunkerFactory = () => new RecursiveChunker(_tokenizer, _maxTokens, _overlap, _abbreviations);
+                return new ChunkingStrategyStep(this);
+            }
+
             internal IChunker Build()
             {
                 if (_chunkerFactory is null)
-                    throw new InvalidOperationException("A chunking strategy is required — call WithFixedSizeChunking() or WithSentenceAwareChunking().");
+                    throw new InvalidOperationException("A chunking strategy is required — call WithFixedSizeChunking(), WithSentenceAwareChunking() or WithRecursiveChunking().");
                 if (_maxTokens <= 0)
                     throw new InvalidOperationException("A max token size is required — call WithMaxTokenSize().");
 
@@ -82,7 +97,9 @@ namespace FluentChunker
                 /// <summary>
                 /// Sets how many tokens of context are carried from the end of one chunk into the
                 /// start of the next. Each chunk's <c>OverlapCount</c> reports the tokens it received.
-                /// Sentence-aware chunking rounds the overlap to whole sentences.
+                /// Sentence-aware and recursive chunking round the overlap to whole units
+                /// (sentences, lines or paragraphs); recursive chunking additionally resets
+                /// it at structural seams.
                 /// </summary>
                 /// <param name="overlap">The overlap size in tokens. Must be non-negative and less than the max token size.</param>
                 /// <returns>The same step, for further optional configuration.</returns>
@@ -101,7 +118,7 @@ namespace FluentChunker
                 /// Adds abbreviations whose trailing period should not end a sentence
                 /// (e.g. <c>"Prof."</c>, <c>"approx."</c>), extending the built-in EN/DE/FR/ES set.
                 /// Matching is case-insensitive; trailing dots are trimmed before storing.
-                /// Only used by sentence-aware chunking.
+                /// Used by the strategies with a sentence tier: sentence-aware and recursive chunking.
                 /// </summary>
                 /// <param name="abbreviations">The abbreviations to add. Entries must be non-empty after trimming trailing dots.</param>
                 /// <returns>The same step, for further optional configuration.</returns>
