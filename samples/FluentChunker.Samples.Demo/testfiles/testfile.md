@@ -27,3 +27,34 @@ The conversation continued throughout the afternoon while diagrams covered the w
 A systems architect described how hierarchical chunking sometimes simplified navigation through large documents because parent sections could summarize information contained inside smaller semantic fragments.
 Nearby another engineer compared retrieval latency measurements gathered from multiple vector databases operating under different indexing configurations and compression strategies.
 The team eventually created a benchmark containing synthetic examples, historical narratives, structured manuals, and conversational transcripts so they could evaluate chunking approaches under realistic operating conditions. Before leaving for the evening the researchers agreed that no universal chunking strategy existed because every workflow balanced retrieval precision, contextual completeness, storage efficiency, and processing speed differently depending on the application domain and the expectations of end users interacting with the system.
+
+## EXPERIMENT_LOG
+
+### Benchmark Configuration
+
+The engineers captured the exact pipeline configuration before starting the evaluation run so later comparisons would stay reproducible across sessions.
+
+```text
+strategy: structure-aware
+tokenizer: o200k_base
+maxTokens: 120
+
+corpus: archive-notes
+reranker: enabled
+```
+
+### Retrieval Scores
+
+The table below summarizes the retrieval quality scores collected during the afternoon benchmark session in the archive room.
+
+| Strategy | Max Tokens | Recall |
+| --- | --- | --- |
+| fixed-size | 120 | 0.71 |
+| sentence-aware | 120 | 0.78 |
+| recursive | 120 | 0.83 |
+
+### Follow-Up Actions
+
+- Re-run the benchmark with a larger overlap window on the recursive pipeline.
+- Compare reranking latency between the two vector database configurations.
+- Archive the meeting notes and raw retrieval logs for the next session.

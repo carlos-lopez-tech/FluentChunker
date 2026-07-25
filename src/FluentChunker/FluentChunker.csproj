@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <!-- Direct reference overrides the vulnerable transitive 9.0.4 pulled in by Microsoft.ML.Tokenizers.Data.O200kBase (NU1903 / GHSA-73j8-2gch-69rq) -->
+    <PackageReference Include="Markdig" Version="1.3.2" />
     <PackageReference Include="Microsoft.Bcl.Memory" Version="10.0.10" />
     <PackageReference Include="Microsoft.ML.Tokenizers" Version="2.0.0" />
     <PackageReference Include="Microsoft.ML.Tokenizers.Data.O200kBase" Version="2.0.0" />

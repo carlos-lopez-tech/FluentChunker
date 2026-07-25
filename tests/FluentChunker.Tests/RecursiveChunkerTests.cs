@@ -127,10 +127,11 @@ namespace FluentChunker.Tests
             // Act
             var result = chunker.Chunk(ThreeParagraphs);
 
-            // Assert — every chunk text is copied verbatim from the source
+            // Assert
             foreach (var chunk in result)
             {
-                Assert.That(ThreeParagraphs, Does.Contain(chunk.Text));
+                Assert.That(ThreeParagraphs.Contains(chunk.Text, StringComparison.Ordinal), Is.True,
+                    $"Chunk {chunk.Index} is not a verbatim slice of the source: '{chunk.Text}'");
             }
         }
 

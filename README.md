@@ -9,6 +9,7 @@ Split text into meaningful chunks for RAG (Retrieval-Augmented Generation), embe
 - **Fixed-size chunking** — Split text into windows of at most N tokens
 - **Sentence-aware chunking** (also known as sentence-based chunking) — Pack whole sentences into token-bounded chunks; never cuts mid-sentence except for a token-window fallback on sentences that alone exceed the budget
 - **Recursive chunking** — Split along a fixed structural hierarchy (paragraphs, then lines, then sentences), descending a level only for pieces that exceed the budget; chunks respect the largest structural boundary possible
+- **Structure-aware chunking (Markdown)** — Split Markdown documents at heading boundaries with a `headingPath` breadcrumb stamped into each chunk's metadata; code fences, tables and lists stay atomic; no overlap by design
 - **Token-aware chunking** — Split text by token count with accurate token counting
 - **Customizable tokenizers** — Plug in your own tokenizer implementation or use built-in Microsoft.ML.Tokenizers, SharpToken integration
 - **Overlap support** — Configure token overlap between chunks to preserve context; overlap is budgeted inside the max token size, so chunks never exceed it
@@ -29,7 +30,7 @@ var pipeline = ChunkingPipeline.Builder.Initialize()
         .WithFixedSizeChunking()
         .WithMaxTokenSize(512)
         .WithOverlap(50))
-    .WithMetadata(meta =>
+    .AddMetadata(meta =>
     {
         meta.Set("Source", "document.txt");
         meta.Set("Model", "gpt-4o");
@@ -99,7 +100,7 @@ var pipeline = ChunkingPipeline.Builder.Initialize()
         .WithSentenceAwareChunking()
         .WithMaxTokenSize(512)
         .WithOverlap(50)
-        .WithAbbreviations("Vgl.", "sog."))   // optional, additive to the built-in list
+        .AddAbbreviations("Vgl.", "sog."))   // optional, additive to the built-in list
     .Build();
 
 var chunks = pipeline.Execute(document);
@@ -109,7 +110,7 @@ Chunks contain whole sentences and are verbatim slices of the source text — wh
 
 `WithOverlap(n)` carries whole trailing sentences into the next chunk, as many as fit within `n` tokens. `OverlapCount` reports the tokens carried *into* a chunk (0 on the first chunk) — the same semantics both strategies use.
 
-**Language support:** works for any language using `. ! ?` as sentence terminators with a bicameral script (Latin, Greek, Cyrillic) — covers all European and North/South American languages. Uppercase detection is Unicode-aware, and `¿ ¡ « „` are recognized as valid sentence openers (Spanish/French/German). A built-in abbreviation guard covers common EN/DE/FR/ES abbreviations (`Dr`, `Mr`, `Nr`, `bzw`, `M`, `Sra`, etc.); extend it with `.WithAbbreviations(...)` — entries may include a trailing dot, matching is case-insensitive.
+**Language support:** works for any language using `. ! ?` as sentence terminators with a bicameral script (Latin, Greek, Cyrillic) — covers all European and North/South American languages. Uppercase detection is Unicode-aware, and `¿ ¡ « „` are recognized as valid sentence openers (Spanish/French/German). A built-in abbreviation guard covers common EN/DE/FR/ES abbreviations (`Dr`, `Mr`, `Nr`, `bzw`, `M`, `Sra`, etc.); extend it with `.AddAbbreviations(...)` — entries may include a trailing dot, matching is case-insensitive.
 
 **Known limitations:** German ordinal periods (e.g. "am 3. Oktober") are falsely split — no code disambiguates them from sentence ends. CJK terminators (`。`) aren't recognized; such text is treated as one long sentence and falls back to fixed-size-style token windowing.
 
@@ -124,7 +125,7 @@ var pipeline = ChunkingPipeline.Builder.Initialize()
         .WithRecursiveChunking()
         .WithMaxTokenSize(512)
         .WithOverlap(64)
-        .WithAbbreviations("Vgl.", "sog."))   // optional, feeds the sentence tier
+        .AddAbbreviations("Vgl.", "sog."))   // optional, feeds the sentence tier
     .Build();
 
 var chunks = pipeline.Execute(document);
@@ -136,6 +137,33 @@ Chunks are verbatim slices of the source (interior line breaks preserved); only 
 
 `WithOverlap(n)` carries whole trailing units (paragraphs, lines or sentences) into the next chunk, as many as fit within `n` tokens. Overlap applies *within* a packing run and **resets to zero at every structural seam** (before the first chunk inside an oversized unit, after the last one, and around token-window fallbacks), so carried context always comes from the same structural region. `OverlapCount` reports the tokens carried *into* a chunk (0 on the first chunk and wherever a seam resets it).
 
+### Structure-Aware Chunking (Markdown)
+
+```csharp
+var tokenizer = new MicrosoftMLTokenizerAdapter("o200k_base");
+
+var pipeline = ChunkingPipeline.Builder.Initialize()
+    .UseTokenizer(tokenizer)
+    .UseSplitter(s => s
+        .WithStructureAwareChunking()
+        .WithMaxTokenSize(512)
+        .AddAbbreviations("Vgl.", "sog."))   // optional, feeds the sentence descent
+    .Build();
+
+var chunks = pipeline.Execute(markdownDocument);
+
+foreach (var chunk in chunks)
+{
+    Console.WriteLine($"[{chunk.Metadata["headingPath"].GetString()}] {chunk.Text[..Math.Min(60, chunk.Text.Length)]}");
+}
+```
+
+Designed for Markdown content: every heading (ATX `#`..`######` or Setext underline) starts a new section, and **sections are hard boundaries** — a chunk never spans two sections, even small neighboring ones. Every chunk carries its heading breadcrumb in `Metadata["headingPath"]` (heading texts joined with `" > "`, empty for content before the first heading) — a reserved key for this strategy. Code fences, tables, lists and quotes are atomic: never split while they fit the budget, so a fence containing blank lines stays whole where recursive chunking's paragraph tier would cut it. An oversized paragraph descends to whole sentences; oversized atomic blocks and single sentences fall back to balanced token windows (decoded from tokens, like the other strategies' fallbacks).
+
+**No overlap by design:** structure is the sole boundary authority, so this strategy's builder path does not offer `WithOverlap` (misuse is a compile error) and `OverlapCount` is always `0`. Use recursive or sentence-aware chunking when overlap continuity matters.
+
+**Plain text degrades gracefully** (Markdown is a superset of plain text, so nothing throws): the whole document becomes one heading-less section packed by paragraphs, with an empty `headingPath` on every chunk — which doubles as the "no structure found" signal. For plain-text corpora, `WithRecursiveChunking()` is the better choice; route by file type in your ingestion code, as the sample project does (`testfile.md` → structure-aware, `testfile.txt` → the other strategies).
+
 ### Adding Custom Metadata
 
 ```csharp
@@ -146,7 +174,7 @@ var pipeline = ChunkingPipeline.Builder.Initialize()
     .UseSplitter(s => s
         .WithFixedSizeChunking()
         .WithMaxTokenSize(512))
-    .WithMetadata(meta =>
+    .AddMetadata(meta =>
     {
         meta.Set("Source", "document.md");
         meta.Set("Version", "1.0");
@@ -165,7 +193,7 @@ foreach (var chunk in chunks)
 
 ### Per-Document Metadata (Reusing One Pipeline)
 
-Pipeline-level metadata (`WithMetadata`) is constant for the whole run; document-level metadata is passed per `Execute` call. On key collision, the document value wins.
+Pipeline-level metadata (`AddMetadata`) is constant for the whole run; document-level metadata is passed per `Execute` call. On key collision, the document value wins.
 
 ```csharp
 var tokenizer = new MicrosoftMLTokenizerAdapter("o200k_base");
@@ -176,7 +204,7 @@ var pipeline = ChunkingPipeline.Builder.Initialize()
         .WithFixedSizeChunking()
         .WithMaxTokenSize(512)
         .WithOverlap(50))
-    .WithMetadata(meta => meta.Set("SourceType", "wiki"))   // run-constant
+    .AddMetadata(meta => meta.Set("SourceType", "wiki"))   // run-constant
     .Build();                                                // built once
 
 foreach (var doc in documents)
@@ -248,7 +276,7 @@ The builder is stepped — each method returns the next step, so the order below
 - `Builder.Initialize()` — Start a new pipeline configuration
 - `.UseTokenizer(ITokenizer tokenizer)` — Set the tokenizer for token counting
 - `.UseSplitter(Action<Splitter.Builder> configure)` — Configure the chunking strategy
-- `.WithMetadata(Action<MetadataBuilder> configure)` — Optional: add pipeline-level metadata to all chunks (may be called multiple times; callbacks compose)
+- `.AddMetadata(Action<MetadataBuilder> configure)` — Optional: add pipeline-level metadata to all chunks (may be called multiple times; callbacks compose)
 - `.Build()` — Create the pipeline
 
 ### Splitter.Builder (inside UseSplitter)
@@ -258,9 +286,10 @@ Also stepped, in this order:
 - `.WithFixedSizeChunking()` — Select the fixed-size strategy
 - `.WithSentenceAwareChunking()` — Select the sentence-aware strategy (peer of `WithFixedSizeChunking`)
 - `.WithRecursiveChunking()` — Select the recursive strategy (paragraphs, then lines, then sentences, then token windows), descending only for oversized pieces (peer of the other two strategy methods)
+- `.WithStructureAwareChunking()` — Select the structure-aware Markdown strategy (peer of the other three strategy methods); its follow-up steps offer `WithMaxTokenSize` and `AddAbbreviations` but deliberately no `WithOverlap`
 - `.WithMaxTokenSize(int maxTokens)` — Maximum tokens per chunk (must be positive)
 - `.WithOverlap(int overlap)` — Optional: tokens shared between consecutive chunks (must be non-negative and smaller than the max token size; budgeted inside it, not added on top)
-- `.WithAbbreviations(params string[] abbreviations)` — Optional: additional abbreviations (beyond the built-in EN/DE/FR/ES set) that should not be treated as sentence endings; entries may include a trailing dot, matching is case-insensitive. Used by the strategies with a sentence tier (`WithSentenceAwareChunking()` and `WithRecursiveChunking()`); has no effect when combined with `WithFixedSizeChunking()`.
+- `.AddAbbreviations(params string[] abbreviations)` — Optional: additional abbreviations (beyond the built-in EN/DE/FR/ES set) that should not be treated as sentence endings; entries may include a trailing dot, matching is case-insensitive. May be called multiple times; entries accumulate rather than replace. Used by the strategies with a sentence tier (`WithSentenceAwareChunking()`, `WithRecursiveChunking()` and `WithStructureAwareChunking()`); has no effect when combined with `WithFixedSizeChunking()`.
 
 ### ChunkingPipeline
 
@@ -288,6 +317,7 @@ Implement to use custom tokenization:
 - .NET 10.0 or later
 - Microsoft.ML.Tokenizers 2.0.0 or later (included as dependency)
 - SharpToken 2.0.6 or later (included as dependency)
+- Markdig 1.3.2 or later (included as dependency; used by structure-aware chunking)
 
 ## Development
 

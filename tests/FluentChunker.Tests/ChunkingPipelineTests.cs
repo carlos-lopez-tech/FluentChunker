@@ -88,14 +88,14 @@ namespace FluentChunker.Tests
                 .UseSplitter(s => s
                     .WithFixedSizeChunking()
                     .WithMaxTokenSize(10))
-                .WithMetadata(meta => meta.Set("Version", "1"));
+                .AddMetadata(meta => meta.Set("Version", "1"));
 
             var builder2 = ChunkingPipeline.Builder.Initialize()
                 .UseTokenizer(_microsoftMLTokenizer)
                 .UseSplitter(s => s
                     .WithFixedSizeChunking()
                     .WithMaxTokenSize(20))
-                .WithMetadata(meta => meta.Set("Version", "2"));
+                .AddMetadata(meta => meta.Set("Version", "2"));
 
             // Act
             var pipeline1 = builder1.Build();

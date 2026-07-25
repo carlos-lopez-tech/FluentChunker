@@ -94,7 +94,7 @@ namespace FluentChunker
                 return this;
             }
 
-            public IOptionalStep WithMetadata(Action<MetadataBuilder> configure)
+            public IOptionalStep AddMetadata(Action<MetadataBuilder> configure)
             {
                 ArgumentNullException.ThrowIfNull(configure);
                 _metadata += configure;
@@ -155,7 +155,7 @@ namespace FluentChunker
         /// <param name="configure">Populates the metadata entries.</param>
         /// <returns>The same step, for further optional configuration.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="configure"/> is null.</exception>
-        IOptionalStep WithMetadata(Action<MetadataBuilder> configure);
+        IOptionalStep AddMetadata(Action<MetadataBuilder> configure);
 
         //IOptionalStep UseTransform(Action<Transform.Builder> buildTransformAction);
         //IOptionalStep UseEnrichment(Action<Enrichment.Builder> buildEnrichmentAction);

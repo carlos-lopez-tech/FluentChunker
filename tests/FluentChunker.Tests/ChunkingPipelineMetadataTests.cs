@@ -15,7 +15,7 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Execute_WithMetadata_AttachesMetadataToAllChunks()
+        public void Execute_PipelineMetadataConfigured_AttachesMetadataToAllChunks()
         {
             // Arrange
             var pipeline = ChunkingPipeline.Builder.Initialize()
@@ -23,7 +23,7 @@ namespace FluentChunker.Tests
                 .UseSplitter(s => s
                     .WithFixedSizeChunking()
                     .WithMaxTokenSize(10))
-                .WithMetadata(meta =>
+                .AddMetadata(meta =>
                 {
                     meta.Set("Source", "test.md");
                     meta.Set("Author", "Carlos Lopez Vaguez");
@@ -80,7 +80,7 @@ namespace FluentChunker.Tests
                     .WithFixedSizeChunking()
                     .WithMaxTokenSize(10)
                     .WithOverlap(1))
-                .WithMetadata(meta => meta.Set("Source", "overlap-test"))
+                .AddMetadata(meta => meta.Set("Source", "overlap-test"))
                 .Build();
 
             // Act
@@ -100,7 +100,7 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void WithMetadata_CalledMultipleTimes_MergesAllEntries()
+        public void AddMetadata_CalledMultipleTimes_MergesAllEntries()
         {
             // Arrange
             var pipeline = ChunkingPipeline.Builder.Initialize()
@@ -108,8 +108,8 @@ namespace FluentChunker.Tests
                 .UseSplitter(s => s
                     .WithFixedSizeChunking()
                     .WithMaxTokenSize(10))
-                .WithMetadata(meta => meta.Set("Source", "first.md"))
-                .WithMetadata(meta => meta.Set("Author", "Carlos Lopez Vaguez"))
+                .AddMetadata(meta => meta.Set("Source", "first.md"))
+                .AddMetadata(meta => meta.Set("Author", "Carlos Lopez Vaguez"))
                 .Build();
 
             // Act
@@ -162,7 +162,7 @@ namespace FluentChunker.Tests
                 .UseSplitter(s => s
                     .WithFixedSizeChunking()
                     .WithMaxTokenSize(10))
-                .WithMetadata(meta => meta.Set("SourceType", "wiki"))
+                .AddMetadata(meta => meta.Set("SourceType", "wiki"))
                 .Build();
 
             // Act
@@ -185,7 +185,7 @@ namespace FluentChunker.Tests
                 .UseSplitter(s => s
                     .WithFixedSizeChunking()
                     .WithMaxTokenSize(10))
-                .WithMetadata(meta => meta.Set("Language", "en"))
+                .AddMetadata(meta => meta.Set("Language", "en"))
                 .Build();
 
             // Act

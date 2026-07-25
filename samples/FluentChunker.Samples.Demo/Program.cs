@@ -20,7 +20,7 @@ namespace FluentChunker.Samples.Demo
                     .WithFixedSizeChunking()
                     .WithMaxTokenSize(512)
                     .WithOverlap(50))
-                .WithMetadata(meta => meta.Set("SourceType", "sample-files"))
+                .AddMetadata(meta => meta.Set("SourceType", "sample-files"))
                 .Build();
 
             var chunks1 = pipeline1.Execute(content, meta =>
@@ -30,7 +30,7 @@ namespace FluentChunker.Samples.Demo
                 meta.Set("CreatedAt", DateTime.UtcNow);
             });
 
-            Console.WriteLine("Example 1: Fixed-Size Chunking\n");
+            Console.WriteLine(">>> Example 1: Fixed-Size Chunking <<<\n");
             PrintChunks(chunks1);
 
 
@@ -41,7 +41,7 @@ namespace FluentChunker.Samples.Demo
                     .WithSentenceAwareChunking()
                     .WithMaxTokenSize(512)
                     .WithOverlap(50))
-                .WithMetadata(meta => meta.Set("SourceType", "sample-files"))
+                .AddMetadata(meta => meta.Set("SourceType", "sample-files"))
                 .Build();
 
             var chunks2 = pipeline2.Execute(content, meta =>
@@ -51,13 +51,13 @@ namespace FluentChunker.Samples.Demo
                 meta.Set("CreatedAt", DateTime.UtcNow);
             });
 
-            Console.WriteLine("Example 2: Sentence-Aware Chunking\n");
+            Console.WriteLine(">>> Example 2: Sentence-Aware Chunking <<<\n");
             PrintChunks(chunks2);
 
 
             // Example 3: Create Pipeline by using Sentence-Aware Chunking with custom abbreviations
             // "Fig.", "No." and "approx." are not in the built-in EN/DE/FR/ES set,
-            // so without WithAbbreviations the splitter would falsely end a sentence
+            // so without AddAbbreviations the splitter would falsely end a sentence
             // after each of them. Trailing dots are optional and matching is case-insensitive.
             var pipeline3 = ChunkingPipeline.Builder.Initialize()
                 .UseTokenizer(microsoftMLTokenizer)
@@ -65,8 +65,8 @@ namespace FluentChunker.Samples.Demo
                     .WithSentenceAwareChunking()
                     .WithMaxTokenSize(32)
                     .WithOverlap(8)
-                    .WithAbbreviations("Fig.", "No.", "approx."))
-                .WithMetadata(meta => meta.Set("SourceType", "inline-sample"))
+                    .AddAbbreviations("Fig.", "No.", "approx."))
+                .AddMetadata(meta => meta.Set("SourceType", "inline-sample"))
                 .Build();
 
             var abbreviationText =
@@ -80,21 +80,21 @@ namespace FluentChunker.Samples.Demo
                 meta.Set("CreatedAt", DateTime.UtcNow);
             });
 
-            Console.WriteLine("Example 3: Sentence-Aware Chunking with custom abbreviations\n");
+            Console.WriteLine(">>> Example 3: Sentence-Aware Chunking with custom abbreviations <<<\n");
             PrintChunks(chunks3);
 
 
             // Example 4: Create Pipeline by using Recursive Chunking
-            // Splits along paragraphs -> lines -> sentences -> token windows, descending
-            // only for pieces that exceed the budget; chunks never merge across a
-            // structural seam and overlap resets to zero there.
+            // Splits along paragraphs -> lines -> sentences -> token windows,
+            // descending only for pieces that exceed the budget;
+            // chunks never merge across a structural seam and overlap resets to zero there.
             var pipeline4 = ChunkingPipeline.Builder.Initialize()
                 .UseTokenizer(microsoftMLTokenizer)
                 .UseSplitter(s => s
                     .WithRecursiveChunking()
                     .WithMaxTokenSize(512)
                     .WithOverlap(50))
-                .WithMetadata(meta => meta.Set("SourceType", "sample-files"))
+                .AddMetadata(meta => meta.Set("SourceType", "sample-files"))
                 .Build();
 
             var chunks4 = pipeline4.Execute(content, meta =>
@@ -104,16 +104,15 @@ namespace FluentChunker.Samples.Demo
                 meta.Set("CreatedAt", DateTime.UtcNow);
             });
 
-            Console.WriteLine("Example 4: Recursive Chunking\n");
+            Console.WriteLine(">>> Example 4: Recursive Chunking <<<\n");
             PrintChunks(chunks4);
 
 
             // Example 5: Recursive Chunking descending into an oversized paragraph
-            // A tight 30-token budget over the same archive/retrieval corpus: the short
-            // title paragraph fits and stays its own chunk (strict seam - never merged
-            // with its oversized neighbor), while the following paragraph alone blows the
-            // budget, so the chunker descends paragraph -> lines -> sentences and packs
-            // whole sentences up to the budget (each sentence exceeds the 10-token overlap,
+            // A tight 30-token budget over the same archive/retrieval corpus:
+            // the short title paragraph fits and stays its own chunk (strict seam - never merged with its oversized neighbor),
+            // while the following paragraph alone blows the budget,
+            // so the chunker descends paragraph -> lines -> sentences and packs whole sentences up to the budget (each sentence exceeds the 10-token overlap,
             // so no whole sentence is carried and OverlapCount stays 0).
             var pipeline5 = ChunkingPipeline.Builder.Initialize()
                 .UseTokenizer(microsoftMLTokenizer)
@@ -121,7 +120,7 @@ namespace FluentChunker.Samples.Demo
                     .WithRecursiveChunking()
                     .WithMaxTokenSize(30)
                     .WithOverlap(10))
-                .WithMetadata(meta => meta.Set("SourceType", "inline-sample"))
+                .AddMetadata(meta => meta.Set("SourceType", "inline-sample"))
                 .Build();
 
             var descentText =
@@ -133,8 +132,33 @@ namespace FluentChunker.Samples.Demo
 
             var chunks5 = pipeline5.Execute(descentText, meta => meta.Set("Source", "inline"));
 
-            Console.WriteLine("Example 5: Recursive Chunking (descent into an oversized paragraph)\n");
+            Console.WriteLine(">>> Example 5: Recursive Chunking (descent into an oversized paragraph) <<<\n");
             PrintChunks(chunks5);
+
+
+            // Example 6: Structure-Aware Chunking over a Markdown document Headings are hard boundaries:
+            // a chunk never spans two sections, and every chunk carries its heading path in Metadata["headingPath"].
+            // Code fences, tables and lists stay whole while they fit, only an oversized paragraph descends to sentences.
+            // This strategy has no overlap by design.
+            var markdownContent = File.ReadAllText("Testfiles\\testfile.md");
+
+            var pipeline6 = ChunkingPipeline.Builder.Initialize()
+                .UseTokenizer(microsoftMLTokenizer)
+                .UseSplitter(s => s
+                    .WithStructureAwareChunking()
+                    .WithMaxTokenSize(512))
+                .AddMetadata(meta => meta.Set("SourceType", "sample-files"))
+                .Build();
+
+            var chunks6 = pipeline6.Execute(markdownContent, meta =>
+            {
+                meta.Set("Source", "testfile.md");
+                meta.Set("Title", "Demo Test File (Markdown)");
+                meta.Set("CreatedAt", DateTime.UtcNow);
+            });
+
+            Console.WriteLine(">>> Example 6: Structure-Aware Chunking (Markdown sections) <<<\n");
+            PrintChunks(chunks6);
 
             Console.ReadKey();
         }
@@ -148,7 +172,7 @@ namespace FluentChunker.Samples.Demo
                 {
                     Console.WriteLine($"  {kvp.Key}: {kvp.Value}");
                 }
-                Console.WriteLine($"  Text:  {chunk.Text[..Math.Min(80, chunk.Text.Length)]}...");
+                Console.WriteLine($"  Text:  {chunk.Text}");
 
                 Console.WriteLine(string.Concat(Enumerable.Repeat("- ", 50)));
                 Console.WriteLine("\n");

@@ -1,5 +1,6 @@
 using FluentChunker.Chunkers.Recursive;
 using FluentChunker.Chunkers.SentenceAware;
+using FluentChunker.Chunkers.StructureAware;
 using FluentChunker.Tokenizers;
 
 namespace FluentChunker.Tests
@@ -26,7 +27,8 @@ namespace FluentChunker.Tests
             var ex = Assert.Throws<InvalidOperationException>(() => splitterStep.UseSplitter(s => { }));
             Assert.That(ex!.Message, Does.Contain("WithFixedSizeChunking")
                 .And.Contain("WithSentenceAwareChunking")
-                .And.Contain("WithRecursiveChunking"));
+                .And.Contain("WithRecursiveChunking")
+                .And.Contain("WithStructureAwareChunking"));
         }
 
         [Test]
@@ -116,7 +118,7 @@ namespace FluentChunker.Tests
         [TestCase(null)]
         [TestCase("")]
         [TestCase("   ")]
-        public void WithAbbreviations_NullOrWhitespaceEntry_ThrowsArgumentException(string? entry)
+        public void AddAbbreviations_NullOrWhitespaceEntry_ThrowsArgumentException(string? entry)
         {
             // Arrange
             var splitterStep = ChunkingPipeline.Builder.Initialize()
@@ -127,7 +129,7 @@ namespace FluentChunker.Tests
                 splitterStep.UseSplitter(s => s
                     .WithSentenceAwareChunking()
                     .WithMaxTokenSize(20)
-                    .WithAbbreviations(entry!)));
+                    .AddAbbreviations(entry!)));
         }
 
         // At MaxTokenSize(6), "Vgl." (3 tokens) and " Abschnitt 3 im Buch." (6 tokens, gap-inclusive)
@@ -152,7 +154,7 @@ namespace FluentChunker.Tests
                 .UseSplitter(s => s
                     .WithSentenceAwareChunking()
                     .WithMaxTokenSize(6)
-                    .WithAbbreviations("Vgl"))
+                    .AddAbbreviations("Vgl"))
                 .Build();
 
             // Act
@@ -178,7 +180,7 @@ namespace FluentChunker.Tests
                 .UseSplitter(s => s
                     .WithSentenceAwareChunking()
                     .WithMaxTokenSize(6)
-                    .WithAbbreviations("Vgl.")) // trailing dot supplied on purpose
+                    .AddAbbreviations("Vgl.")) // trailing dot supplied on purpose
                 .Build();
 
             // Act
@@ -270,6 +272,89 @@ namespace FluentChunker.Tests
                     Assert.That(chunk.Text, Does.EndWith("."));
                     Assert.That(chunk.TokenCount, Is.LessThanOrEqualTo(15));
                 }
+            }
+        }
+
+        [Test]
+        public void WithStructureAwareChunking_ValidConfiguration_BuildsStructureAwareChunker()
+        {
+            // Arrange
+            var builder = new Splitter.Builder(_sharpTokenizer);
+            builder.WithStructureAwareChunking()
+                .WithMaxTokenSize(120);
+
+            // Act
+            var chunker = builder.Build();
+
+            // Assert
+            Assert.That(chunker, Is.InstanceOf<StructureAwareChunker>());
+        }
+
+        [Test]
+        public void WithStructureAwareChunking_WithoutMaxTokenSize_ThrowsInvalidOperationException()
+        {
+            // Arrange
+            var splitterStep = ChunkingPipeline.Builder.Initialize()
+                .UseTokenizer(_sharpTokenizer);
+
+            // Act & Assert
+            Assert.Throws<InvalidOperationException>(() =>
+                splitterStep.UseSplitter(s => s.WithStructureAwareChunking()));
+        }
+
+        [Test]
+        public void WithStructureAwareChunking_NonPositiveMaxTokenSize_ThrowsArgumentOutOfRangeException()
+        {
+            // Arrange
+            var splitterStep = ChunkingPipeline.Builder.Initialize()
+                .UseTokenizer(_sharpTokenizer);
+
+            // Act & Assert
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                splitterStep.UseSplitter(s => s
+                    .WithStructureAwareChunking()
+                    .WithMaxTokenSize(0)));
+        }
+
+        [Test]
+        public void WithStructureAwareChunking_AllDotsAbbreviation_ThrowsArgumentException()
+        {
+            // Arrange - an all-dots entry trims down to empty and must fail the whole batch
+            var splitterStep = ChunkingPipeline.Builder.Initialize()
+                .UseTokenizer(_sharpTokenizer);
+
+            // Act & Assert
+            Assert.Throws<ArgumentException>(() =>
+                splitterStep.UseSplitter(s => s
+                    .WithStructureAwareChunking()
+                    .WithMaxTokenSize(120)
+                    .AddAbbreviations("...")));
+        }
+
+        [Test]
+        public void UseSplitter_StructureAwarePipeline_StampsHeadingPathOnEveryChunk()
+        {
+            // Arrange
+            var pipeline = ChunkingPipeline.Builder.Initialize()
+                .UseTokenizer(_sharpTokenizer)
+                .UseSplitter(s => s
+                    .WithStructureAwareChunking()
+                    .WithMaxTokenSize(120))
+                .Build();
+            var text = "## Retrieval Notes\n\n" +
+                       "The team reviewed the reports before the meeting started.\n\n" +
+                       "## Ranking Results\n\n" +
+                       "The group compared results from the two search systems.";
+
+            // Act
+            var result = pipeline.Execute(text);
+
+            // Assert - one chunk per section (hard seams), each carrying its breadcrumb
+            Assert.That(result, Has.Count.EqualTo(2));
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(result[0].Metadata["headingPath"].GetString(), Is.EqualTo("Retrieval Notes"));
+                Assert.That(result[1].Metadata["headingPath"].GetString(), Is.EqualTo("Ranking Results"));
             }
         }
     }
