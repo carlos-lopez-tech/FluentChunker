@@ -11,6 +11,7 @@ CLAUDE.md
 .claude/
 docs/
 .worktrees/
+bash.exe.stackdump
 *.rsuser
 *.suo
 *.user
