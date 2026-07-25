@@ -14,7 +14,7 @@ namespace FluentChunker.Tests
         [SetUp]
         public void SetUp()
         {
-            _microsoftMLTokenizer = new MicrosoftMLTokenizerAdapter("o200k_base");
+            _microsoftMLTokenizer = new MicrosoftMLTokenizerAdapter("cl100k_base");
         }
 
         [Test]
@@ -61,7 +61,7 @@ namespace FluentChunker.Tests
             // Act
             var result = chunker.Chunk(InputText);
 
-            // Assert — every chunk ends exactly where a sentence ends
+            // Assert - every chunk ends exactly where a sentence ends
             foreach (var chunk in result)
             {
                 Assert.That(chunk.Text, Does.EndWith("."));
@@ -80,7 +80,7 @@ namespace FluentChunker.Tests
             // Act
             var result = chunker.Chunk(textWithParagraphs);
 
-            // Assert — chunk text is copied verbatim from the source, whitespace included
+            // Assert - chunk text is copied verbatim from the source, whitespace included
             foreach (var chunk in result)
             {
                 Assert.That(textWithParagraphs, Does.Contain(chunk.Text));
@@ -119,15 +119,13 @@ namespace FluentChunker.Tests
         [Test]
         public void Chunk_WithOverlap_CarriesWholeTrailingSentences()
         {
-            // Arrange — real gap-inclusive token counts for InputText's 4 sentences are 9, 8, 7, 6
-            // (verified against MicrosoftMLTokenizerAdapter/o200k_base); maxTokens 20 packs 2 sentences
-            // per chunk and overlap 12 always carries exactly the last sentence (any 2 sentences sum >= 13)
+            // Arrange - real gap-inclusive token counts for InputText's 4 sentences are 9, 8, 7, 6 (verified against MicrosoftMLTokenizerAdapter/cl100k_base); maxTokens 20 packs 2 sentences per chunk and overlap 12 always carries exactly the last sentence (any 2 sentences sum >= 13)
             var chunker = new SentenceAwareChunker(_microsoftMLTokenizer, maxTokens: 20, overlap: 12);
 
             // Act
             var result = chunker.Chunk(InputText);
 
-            // Assert — every non-first chunk starts with a sentence repeated from the previous chunk
+            // Assert - every non-first chunk starts with a sentence repeated from the previous chunk
             Assert.That(result, Has.Count.GreaterThan(1));
             for (var i = 1; i < result.Count; i++)
             {
@@ -141,7 +139,7 @@ namespace FluentChunker.Tests
         [Test]
         public void Chunk_OverlapBudgetSmallerThanLastSentence_CarriesNothing()
         {
-            // Arrange — every sentence in InputText is 6-9 gap-inclusive tokens; a budget of 2 fits none
+            // Arrange - every sentence in InputText is 6-9 gap-inclusive tokens; a budget of 2 fits none
             var chunker = new SentenceAwareChunker(_microsoftMLTokenizer, maxTokens: 20, overlap: 2);
 
             // Act
@@ -158,13 +156,13 @@ namespace FluentChunker.Tests
         [Test]
         public void Chunk_WithOverlap_AllChunksStayWithinBudget()
         {
-            // Arrange — overlap close to maxTokens stresses the seed-dropping edge case
+            // Arrange - overlap close to maxTokens stresses the seed-dropping edge case
             var chunker = new SentenceAwareChunker(_microsoftMLTokenizer, maxTokens: 15, overlap: 14);
 
             // Act
             var result = chunker.Chunk(InputText);
 
-            // Assert — the budget invariant always wins over overlap
+            // Assert - the budget invariant always wins over overlap
             foreach (var chunk in result)
             {
                 Assert.That(chunk.TokenCount, Is.LessThanOrEqualTo(15));
@@ -174,8 +172,7 @@ namespace FluentChunker.Tests
         [Test]
         public void Chunk_FirstChunk_HasZeroOverlapCount()
         {
-            // Arrange — same parameters as Chunk_WithOverlap_CarriesWholeTrailingSentences, which
-            // produces multiple chunks; the first one must never receive carried-over sentences
+            // Arrange - same parameters as Chunk_WithOverlap_CarriesWholeTrailingSentences, which produces multiple chunks; the first one must never receive carried-over sentences
             var chunker = new SentenceAwareChunker(_microsoftMLTokenizer, maxTokens: 20, overlap: 12);
 
             // Act
@@ -188,7 +185,7 @@ namespace FluentChunker.Tests
         [Test]
         public void Chunk_OversizedSentence_FallsBackToTokenWindows()
         {
-            // Arrange — one giant "sentence" with no terminator, far beyond the budget
+            // Arrange - one giant "sentence" with no terminator, far beyond the budget
             var giantSentence = string.Join(" ", Enumerable.Repeat("word", 100));
             var chunker = new SentenceAwareChunker(_microsoftMLTokenizer, maxTokens: 10, overlap: 0);
 
@@ -210,7 +207,7 @@ namespace FluentChunker.Tests
         [Test]
         public void Chunk_OversizedSentenceBetweenNormalSentences_ResumesPacking()
         {
-            // Arrange — the giant sentence starts uppercase so the boundary before it is detected
+            // Arrange - the giant sentence starts uppercase so the boundary before it is detected
             var giantSentence = string.Join(" ", Enumerable.Repeat("Word", 100)) + ".";
             var text = $"Short opener here. {giantSentence} Short closer here.";
             var chunker = new SentenceAwareChunker(_microsoftMLTokenizer, maxTokens: 10, overlap: 0);
@@ -218,7 +215,7 @@ namespace FluentChunker.Tests
             // Act
             var result = chunker.Chunk(text);
 
-            // Assert — first and last chunks are the intact short sentences
+            // Assert - first and last chunks are the intact short sentences
             using (Assert.EnterMultipleScope())
             {
                 Assert.That(result[0].Text, Is.EqualTo("Short opener here."));
@@ -233,8 +230,7 @@ namespace FluentChunker.Tests
         [Test]
         public void Chunk_OversizedSentenceWithOverlapConfigured_ResetsOverlapAcrossFallback()
         {
-            // Arrange — overlap > 0 configured; an oversized sentence in the middle must reset
-            // overlap state, not leak stale carryover across the fallback boundary
+            // Arrange - overlap > 0 configured; an oversized sentence in the middle must reset overlap state, not leak stale carryover across the fallback boundary
             var giantSentence = string.Join(" ", Enumerable.Repeat("Giant", 100)) + ".";
             var text = "Short opener here. Another short one follows. " +
                 $"{giantSentence} " +
@@ -244,7 +240,7 @@ namespace FluentChunker.Tests
             // Act
             var resultList = chunker.Chunk(text).ToList();
 
-            // Assert — every fallback window (from the giant sentence) carries zero overlap
+            // Assert - every fallback window (from the giant sentence) carries zero overlap
             var fallbackIndices = new List<int>();
             for (var i = 0; i < resultList.Count; i++)
             {
@@ -258,8 +254,7 @@ namespace FluentChunker.Tests
                 Assert.That(resultList[i].OverlapCount, Is.Zero);
             }
 
-            // ...and the first normal chunk resumed after the fallback also starts with zero
-            // overlap, since there's nothing valid to carry across a fallback break
+            // ...and the first normal chunk resumed after the fallback also starts with zero overlap, since there's nothing valid to carry across a fallback break
             var lastFallbackIndex = fallbackIndices[^1];
             using (Assert.EnterMultipleScope())
             {
@@ -271,8 +266,7 @@ namespace FluentChunker.Tests
         [Test]
         public void Chunk_TwoConsecutiveOversizedSentences_EmitsWindowsForBoth()
         {
-            // Arrange — two back-to-back oversized sentences; each must get its own independent
-            // set of fallback windows with no cross-contamination between them
+            // Arrange - two back-to-back oversized sentences; each must get its own independent set of fallback windows with no cross-contamination between them
             var giantSentence1 = string.Join(" ", Enumerable.Repeat("Alpha", 100)) + ".";
             var giantSentence2 = string.Join(" ", Enumerable.Repeat("Beta", 100)) + ".";
             var text = $"{giantSentence1} {giantSentence2}";
@@ -297,15 +291,14 @@ namespace FluentChunker.Tests
         [Test]
         public void Chunk_OversizedSentence_EmitsBalancedWindowsWithoutTinyRemainder()
         {
-            // Arrange — 61 tokens at a budget of 10 would leave a useless 1-token "." chunk
-            // with naive fixed-stride windowing; balanced windows spread the tokens evenly
+            // Arrange - 61 tokens at a budget of 10 would leave a useless 1-token "." chunk with naive fixed-stride windowing; balanced windows spread the tokens evenly
             var giantSentence = string.Join(" ", Enumerable.Repeat("Word", 60)) + ".";
             var chunker = new SentenceAwareChunker(_microsoftMLTokenizer, maxTokens: 10, overlap: 0);
 
             // Act
             var result = chunker.Chunk(giantSentence);
 
-            // Assert — every window stays within budget and none is a tiny remainder
+            // Assert - every window stays within budget and none is a tiny remainder
             Assert.That(result, Has.Count.GreaterThan(1));
             foreach (var chunk in result)
             {

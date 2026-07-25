@@ -5,15 +5,13 @@ namespace FluentChunker.Tests
     public class ChunkingPipelineTests
     {
         private const string InputText = "A pragmatic developer chooses the least complicated implementation that reliably solves the problem.";
-        private const string EncodingName = "o200k_base";
+        private const string EncodingName = "cl100k_base";
         private MicrosoftMLTokenizerAdapter _microsoftMLTokenizer;
-        private SharpTokenizerAdapter _sharpTokenizer;
 
         [SetUp]
         public void Setup()
         {
             _microsoftMLTokenizer = new MicrosoftMLTokenizerAdapter(EncodingName);
-            _sharpTokenizer = new SharpTokenizerAdapter(EncodingName);           
         }
 
         [Test]
@@ -44,7 +42,7 @@ namespace FluentChunker.Tests
         {
             // Arrange
             var pipeline = ChunkingPipeline.Builder.Initialize()
-                .UseTokenizer(_sharpTokenizer)
+                .UseTokenizer(_microsoftMLTokenizer)
                 .UseSplitter(s => s
                     .WithFixedSizeChunking()
                     .WithMaxTokenSize(10)
@@ -54,7 +52,7 @@ namespace FluentChunker.Tests
             // Act
             var chunks = pipeline.Execute(InputText);
 
-            // Assert — OverlapCount reports tokens carried INTO a chunk: 0 on the first,
+            // Assert - OverlapCount reports tokens carried INTO a chunk: 0 on the first,
             // the overlap on every following chunk (same semantics as SentenceAwareChunker)
             Assert.That(chunks, Has.Count.GreaterThan(1));
             using (Assert.EnterMultipleScope())
@@ -69,7 +67,7 @@ namespace FluentChunker.Tests
         {
             // Arrange
             var pipeline = ChunkingPipeline.Builder.Initialize()
-                .UseTokenizer(_sharpTokenizer)
+                .UseTokenizer(_microsoftMLTokenizer)
                 .UseSplitter(s => s
                     .WithFixedSizeChunking()
                     .WithMaxTokenSize(10))
@@ -80,11 +78,11 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Builder_MultipleInstancesWithDifferentTokenizers_DontInterfere()
+        public void Builder_MultipleInstancesWithDifferentConfigurations_DontInterfere()
         {
             // Arrange
             var builder1 = ChunkingPipeline.Builder.Initialize()
-                .UseTokenizer(_sharpTokenizer)
+                .UseTokenizer(_microsoftMLTokenizer)
                 .UseSplitter(s => s
                     .WithFixedSizeChunking()
                     .WithMaxTokenSize(10))

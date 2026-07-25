@@ -5,7 +5,7 @@ namespace FluentChunker.Tests
     public class ChunkingPipelineMetadataTests
     {
         private const string InputText = "A pragmatic developer chooses the least complicated implementation that reliably solves the problem.";
-        private const string EncodingName = "o200k_base";
+        private const string EncodingName = "cl100k_base";
         private MicrosoftMLTokenizerAdapter _microsoftMLTokenizer;
 
         [SetUp]
@@ -86,7 +86,7 @@ namespace FluentChunker.Tests
             // Act
             var chunks = pipeline.Execute(InputText);
 
-            // Assert — first chunk receives nothing; every following chunk receives the overlap
+            // Assert - first chunk receives nothing; every following chunk receives the overlap
             Assert.That(chunks, Has.Count.GreaterThan(1));
             using (Assert.EnterMultipleScope())
             {

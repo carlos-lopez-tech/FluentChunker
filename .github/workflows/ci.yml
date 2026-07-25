@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly, so a newly disclosed advisory in a dependency surfaces without a push
+    - cron: '0 6 * * 1'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Source Link resolves commits against the full history
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Restore
+        run: dotnet restore FluentChunker.slnx
+
+      - name: Build
+        run: dotnet build FluentChunker.slnx --no-restore -c Release -warnaserror
+
+      - name: Test
+        run: dotnet test tests/FluentChunker.Tests --no-build -c Release
+
+      - name: Pack
+        run: dotnet pack src/FluentChunker/FluentChunker.csproj --no-build -c Release -o ./artifacts
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nuget-packages
+          path: ./artifacts/*.*nupkg
+          if-no-files-found: error
+
+  vulnerable-packages:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      # Restore first: the listing only reports transitives once the graph is resolved
+      - name: Restore
+        run: dotnet restore FluentChunker.slnx
+
+      # Catches transitive advisories like the pinned Microsoft.Bcl.Memory fix (NU1903) without anyone going looking.
+      # dotnet list always exits 0, so the report text is what decides; the language is pinned to keep the match deterministic.
+      - name: Check for vulnerable packages
+        env:
+          DOTNET_CLI_UI_LANGUAGE: en
+        run: |
+          dotnet list src/FluentChunker/FluentChunker.csproj package --vulnerable --include-transitive | tee vulnerable.log
+          if grep -q "has the following vulnerable packages" vulnerable.log; then
+            echo "::error::Vulnerable packages detected"
+            exit 1
+          fi
+
+      - name: Check for deprecated packages
+        env:
+          DOTNET_CLI_UI_LANGUAGE: en
+        run: |
+          dotnet list src/FluentChunker/FluentChunker.csproj package --deprecated | tee deprecated.log
+          if grep -q "has the following deprecated packages" deprecated.log; then
+            echo "::error::Deprecated packages detected"
+            exit 1
+          fi

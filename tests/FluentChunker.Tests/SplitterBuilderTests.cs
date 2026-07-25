@@ -7,13 +7,13 @@ namespace FluentChunker.Tests
 {
     public class SplitterBuilderTests
     {
-        private const string EncodingName = "o200k_base";
-        private SharpTokenizerAdapter _sharpTokenizer;
+        private const string EncodingName = "cl100k_base";
+        private MicrosoftMLTokenizerAdapter _microsoftMLTokenizer;
 
         [SetUp]
         public void Setup()
         {
-            _sharpTokenizer = new SharpTokenizerAdapter(EncodingName);
+            _microsoftMLTokenizer = new MicrosoftMLTokenizerAdapter(EncodingName);
         }
 
         [Test]
@@ -21,9 +21,9 @@ namespace FluentChunker.Tests
         {
             // Arrange
             var splitterStep = ChunkingPipeline.Builder.Initialize()
-                .UseTokenizer(_sharpTokenizer);
+                .UseTokenizer(_microsoftMLTokenizer);
 
-            // Act & Assert — the error must name every available strategy
+            // Act & Assert - the error must name every available strategy
             var ex = Assert.Throws<InvalidOperationException>(() => splitterStep.UseSplitter(s => { }));
             Assert.That(ex!.Message, Does.Contain("WithFixedSizeChunking")
                 .And.Contain("WithSentenceAwareChunking")
@@ -36,7 +36,7 @@ namespace FluentChunker.Tests
         {
             // Arrange
             var splitterStep = ChunkingPipeline.Builder.Initialize()
-                .UseTokenizer(_sharpTokenizer);
+                .UseTokenizer(_microsoftMLTokenizer);
 
             // Act & Assert
             Assert.Throws<InvalidOperationException>(() =>
@@ -48,7 +48,7 @@ namespace FluentChunker.Tests
         {
             // Arrange
             var splitterStep = ChunkingPipeline.Builder.Initialize()
-                .UseTokenizer(_sharpTokenizer);
+                .UseTokenizer(_microsoftMLTokenizer);
 
             // Act & Assert
             Assert.Throws<ArgumentOutOfRangeException>(() =>
@@ -62,7 +62,7 @@ namespace FluentChunker.Tests
         {
             // Arrange
             var splitterStep = ChunkingPipeline.Builder.Initialize()
-                .UseTokenizer(_sharpTokenizer);
+                .UseTokenizer(_microsoftMLTokenizer);
 
             // Act & Assert
             Assert.Throws<ArgumentOutOfRangeException>(() =>
@@ -77,7 +77,7 @@ namespace FluentChunker.Tests
         {
             // Arrange
             var splitterStep = ChunkingPipeline.Builder.Initialize()
-                .UseTokenizer(_sharpTokenizer);
+                .UseTokenizer(_microsoftMLTokenizer);
 
             // Act & Assert
             Assert.Throws<ArgumentOutOfRangeException>(() =>
@@ -91,7 +91,7 @@ namespace FluentChunker.Tests
         public void WithSentenceAwareChunking_ValidConfiguration_BuildsSentenceAwareChunker()
         {
             // Arrange
-            var builder = new Splitter.Builder(_sharpTokenizer);
+            var builder = new Splitter.Builder(_microsoftMLTokenizer);
             builder.WithSentenceAwareChunking()
                 .WithMaxTokenSize(20)
                 .WithOverlap(5);
@@ -108,7 +108,7 @@ namespace FluentChunker.Tests
         {
             // Arrange
             var splitterStep = ChunkingPipeline.Builder.Initialize()
-                .UseTokenizer(_sharpTokenizer);
+                .UseTokenizer(_microsoftMLTokenizer);
 
             // Act & Assert
             Assert.Throws<InvalidOperationException>(() =>
@@ -122,7 +122,7 @@ namespace FluentChunker.Tests
         {
             // Arrange
             var splitterStep = ChunkingPipeline.Builder.Initialize()
-                .UseTokenizer(_sharpTokenizer);
+                .UseTokenizer(_microsoftMLTokenizer);
 
             // Act & Assert
             Assert.Throws<ArgumentException>(() =>
@@ -132,25 +132,22 @@ namespace FluentChunker.Tests
                     .AddAbbreviations(entry!)));
         }
 
-        // At MaxTokenSize(6), "Vgl." (3 tokens) and " Abschnitt 3 im Buch." (6 tokens, gap-inclusive)
-        // don't fit together (3+6 > 6), so without the abbreviation guard the splitter treats
-        // "Vgl." as its own sentence and the first chunk is exactly "Vgl.".
-        //  Registering "Vgl" as an abbreviation suppresses that false break, merging it into "Vgl. Abschnitt 3 im Buch."
-        // (9 tokens) which then no longer fits the 6-token budget as a single unit and falls back to fixed-size windowing
-        // - proving the guard changed the chunker's actual segmentation.
+        // At MaxTokenSize(6), "Vgl." (3 tokens) and " Abschnitt 3 im Buch." (6 tokens, gap-inclusive) don't fit together (3+6 > 6), so without the abbreviation guard the splitter treats "Vgl." as its own sentence and the first chunk is exactly "Vgl.".
+        // Registering "Vgl" as an abbreviation suppresses that false break, merging it into "Vgl.
+        // Abschnitt 3 im Buch." (9 tokens) which then no longer fits the 6-token budget as a single unit and falls back to fixed-size windowing - proving the guard changed the chunker's actual segmentation.
         [Test]
         public void UseSplitter_CustomAbbreviationConfigured_SuppressesMatchingSentenceBreak()
         {
             // Arrange
             var text = "Vgl. Abschnitt 3 im Buch. Weiter geht es.";
             var unguardedPipeline = ChunkingPipeline.Builder.Initialize()
-                .UseTokenizer(_sharpTokenizer)
+                .UseTokenizer(_microsoftMLTokenizer)
                 .UseSplitter(s => s
                     .WithSentenceAwareChunking()
                     .WithMaxTokenSize(6))
                 .Build();
             var guardedPipeline = ChunkingPipeline.Builder.Initialize()
-                .UseTokenizer(_sharpTokenizer)
+                .UseTokenizer(_microsoftMLTokenizer)
                 .UseSplitter(s => s
                     .WithSentenceAwareChunking()
                     .WithMaxTokenSize(6)
@@ -176,7 +173,7 @@ namespace FluentChunker.Tests
             // Arrange
             var text = "Vgl. Abschnitt 3 im Buch. Weiter geht es.";
             var pipeline = ChunkingPipeline.Builder.Initialize()
-                .UseTokenizer(_sharpTokenizer)
+                .UseTokenizer(_microsoftMLTokenizer)
                 .UseSplitter(s => s
                     .WithSentenceAwareChunking()
                     .WithMaxTokenSize(6)
@@ -196,7 +193,7 @@ namespace FluentChunker.Tests
         {
             // Arrange
             var pipeline = ChunkingPipeline.Builder.Initialize()
-                .UseTokenizer(_sharpTokenizer)
+                .UseTokenizer(_microsoftMLTokenizer)
                 .UseSplitter(s => s
                     .WithSentenceAwareChunking()
                     .WithMaxTokenSize(15))
@@ -223,7 +220,7 @@ namespace FluentChunker.Tests
         public void WithRecursiveChunking_ValidConfiguration_BuildsRecursiveChunker()
         {
             // Arrange
-            var builder = new Splitter.Builder(_sharpTokenizer);
+            var builder = new Splitter.Builder(_microsoftMLTokenizer);
             builder.WithRecursiveChunking()
                 .WithMaxTokenSize(20)
                 .WithOverlap(5);
@@ -240,7 +237,7 @@ namespace FluentChunker.Tests
         {
             // Arrange
             var splitterStep = ChunkingPipeline.Builder.Initialize()
-                .UseTokenizer(_sharpTokenizer);
+                .UseTokenizer(_microsoftMLTokenizer);
 
             // Act & Assert
             Assert.Throws<InvalidOperationException>(() =>
@@ -250,9 +247,9 @@ namespace FluentChunker.Tests
         [Test]
         public void UseSplitter_RecursivePipeline_ProducesStructureAlignedChunks()
         {
-            // Arrange — two paragraphs of two sentences each; a 15-token budget forces each paragraph to descend to its sentences
+            // Arrange - two paragraphs of two sentences each; a 15-token budget forces each paragraph to descend to its sentences
             var pipeline = ChunkingPipeline.Builder.Initialize()
-                .UseTokenizer(_sharpTokenizer)
+                .UseTokenizer(_microsoftMLTokenizer)
                 .UseSplitter(s => s
                     .WithRecursiveChunking()
                     .WithMaxTokenSize(15))
@@ -263,7 +260,7 @@ namespace FluentChunker.Tests
             // Act
             var result = pipeline.Execute(text);
 
-            // Assert — chunks align with structural boundaries and respect the budget
+            // Assert - chunks align with structural boundaries and respect the budget
             Assert.That(result, Has.Count.GreaterThan(1));
             using (Assert.EnterMultipleScope())
             {
@@ -279,7 +276,7 @@ namespace FluentChunker.Tests
         public void WithStructureAwareChunking_ValidConfiguration_BuildsStructureAwareChunker()
         {
             // Arrange
-            var builder = new Splitter.Builder(_sharpTokenizer);
+            var builder = new Splitter.Builder(_microsoftMLTokenizer);
             builder.WithStructureAwareChunking()
                 .WithMaxTokenSize(120);
 
@@ -295,7 +292,7 @@ namespace FluentChunker.Tests
         {
             // Arrange
             var splitterStep = ChunkingPipeline.Builder.Initialize()
-                .UseTokenizer(_sharpTokenizer);
+                .UseTokenizer(_microsoftMLTokenizer);
 
             // Act & Assert
             Assert.Throws<InvalidOperationException>(() =>
@@ -307,7 +304,7 @@ namespace FluentChunker.Tests
         {
             // Arrange
             var splitterStep = ChunkingPipeline.Builder.Initialize()
-                .UseTokenizer(_sharpTokenizer);
+                .UseTokenizer(_microsoftMLTokenizer);
 
             // Act & Assert
             Assert.Throws<ArgumentOutOfRangeException>(() =>
@@ -321,7 +318,7 @@ namespace FluentChunker.Tests
         {
             // Arrange - an all-dots entry trims down to empty and must fail the whole batch
             var splitterStep = ChunkingPipeline.Builder.Initialize()
-                .UseTokenizer(_sharpTokenizer);
+                .UseTokenizer(_microsoftMLTokenizer);
 
             // Act & Assert
             Assert.Throws<ArgumentException>(() =>
@@ -336,7 +333,7 @@ namespace FluentChunker.Tests
         {
             // Arrange
             var pipeline = ChunkingPipeline.Builder.Initialize()
-                .UseTokenizer(_sharpTokenizer)
+                .UseTokenizer(_microsoftMLTokenizer)
                 .UseSplitter(s => s
                     .WithStructureAwareChunking()
                     .WithMaxTokenSize(120))

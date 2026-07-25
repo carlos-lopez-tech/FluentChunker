@@ -6,17 +6,17 @@ using FluentChunker.Tokenizers;
 namespace FluentChunker.Chunkers.StructureAware
 {
     /// <summary>
-    /// Splits Markdown documents along their explicit structure. Every heading starts a new
-    /// section and sections are hard boundaries: a chunk never spans two sections. 
-    /// Blocks inside a section are packed greedily up to the token budget; 
-    /// atomic blocks (code fences, tables, lists, quotes) are never split while they fit. 
-    /// An oversized paragraph descends to whole sentences; 
-    /// an oversized atomic block or single sentence falls back to evenly balanced token windows. 
-    /// Every chunk carries its heading path in <c>Metadata["headingPath"]</c> (empty for content before the first heading). 
-    /// This strategy applies no overlap: <c>OverlapCount</c> is always 0. 
+    /// Splits Markdown documents along their explicit structure.
+    /// Every heading starts a new section and sections are hard boundaries: a chunk never spans two sections.
+    /// Blocks inside a section are packed greedily up to the token budget;
+    /// atomic blocks (code fences, tables, lists, quotes) are never split while they fit.
+    /// An oversized paragraph descends to whole sentences;
+    /// an oversized atomic block or single sentence falls back to evenly balanced token windows.
+    /// Every chunk carries its heading path in <c>Metadata["headingPath"]</c> (empty for content before the first heading).
+    /// This strategy applies no overlap: <c>OverlapCount</c> is always 0.
     /// Plain text without Markdown structure degrades gracefully to paragraph packing.
     /// </summary>
-    public class StructureAwareChunker(ITokenizer tokenizer, int maxTokens, IReadOnlySet<string>? additionalAbbreviations = null) : IChunker
+    internal class StructureAwareChunker(ITokenizer tokenizer, int maxTokens, IReadOnlySet<string>? additionalAbbreviations = null) : IChunker
     {
         internal const string HeadingPathMetadataKey = "headingPath";
         private const string HeadingPathSeparator = " > ";
@@ -47,7 +47,8 @@ namespace FluentChunker.Chunkers.StructureAware
             return chunks;
         }
 
-        // Packs one run of same-level units into chunks. Because every section is packed independently, a chunk can never span two sections: headings are hard seams.
+        // Packs one run of same-level units into chunks.
+        // Because every section is packed independently, a chunk can never span two sections: headings are hard seams.
         // A unit that alone exceeds the budget is flushed around and descended into, so units on opposite sides of it never share a chunk.
         private void PackRun(string text, IReadOnlyList<SectionBlock> units, Tier tier, string headingPath, List<Chunk> chunks, ref int index)
         {
@@ -82,7 +83,8 @@ namespace FluentChunker.Chunkers.StructureAware
         }
 
         // An oversized atomic unit (heading, fence, table, list, quote) has nothing semantic to descend into; an oversized sentence has no smaller level left.
-        // Both go straight to token windows. Only an oversized paragraph descends to its sentences.
+        // Both go straight to token windows.
+        // Only an oversized paragraph descends to its sentences.
         private void Descend(string text, SectionBlock unit, Tier tier, string headingPath, List<Chunk> chunks, ref int index)
         {
             if (tier == Tier.Sentences || unit.IsAtomic)

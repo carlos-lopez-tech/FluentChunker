@@ -10,7 +10,7 @@ namespace FluentChunker.Tests
         [SetUp]
         public void SetUp()
         {
-            _tokenizer = new MicrosoftMLTokenizerAdapter("o200k_base");
+            _tokenizer = new MicrosoftMLTokenizerAdapter("cl100k_base");
         }
 
         [Test]

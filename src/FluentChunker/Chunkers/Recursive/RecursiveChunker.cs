@@ -5,19 +5,19 @@ using FluentChunker.Tokenizers;
 namespace FluentChunker.Chunkers.Recursive
 {
     /// <summary>
-    /// Splits a document by structure, trying the largest pieces first: paragraphs, then
-    /// lines, then sentences. Adjacent pieces are packed together into chunks of at most
-    /// <c>maxTokens</c> tokens; a piece that exceeds that budget on its own is split into
-    /// smaller pieces instead. A sentence that is still too big falls back to fixed token
-    /// windows.
+    /// Splits a document by structure, trying the largest pieces first:
+    /// paragraphs, then lines, then sentences.
+    /// Adjacent pieces are packed together into chunks of at most <c>maxTokens</c> tokens,
+    /// a piece that exceeds that budget on its own is split into smaller pieces instead.
+    /// A sentence that is still too big falls back to fixed token windows.
     /// </summary>
-    public class RecursiveChunker(ITokenizer tokenizer, int maxTokens, int overlap,
+    internal class RecursiveChunker(ITokenizer tokenizer, int maxTokens, int overlap,
         IReadOnlySet<string>? additionalAbbreviations = null) : IChunker
     {
-        // The three structural levels the chunker splits on, from largest to smallest. It
-        // tries the largest first; a piece still too big for the token budget is split again
-        // one level smaller. A sentence that is still too big has no smaller level left, so it
-        // falls back to raw token windows (see EmitTokenWindows), which can always be made to fit.
+        // The three structural levels the chunker splits on, from largest to smallest.
+        // It tries the largest first, a piece still too big for the token budget is split again one level smaller.
+        // A sentence that is still too big has no smaller level left,
+        // so it falls back to raw token windows (see EmitTokenWindows), which can always be made to fit.
         private enum Tier { Paragraphs, Lines, Sentences }
 
         private readonly ITokenizer _tokenizer = tokenizer;
@@ -40,11 +40,10 @@ namespace FluentChunker.Chunkers.Recursive
             return chunks;
         }
 
-        // Packs one list of same-level pieces (all paragraphs, or all lines, or all sentences) into chunks. 
+        // Packs one list of same-level pieces (all paragraphs, or all lines, or all sentences) into chunks.
         // Pieces are appended to the current chunk until the next one would push it over the token budget, then a new chunk starts.
-        // A single piece that is already over budget on its own is split one level smaller instead (see Descend): 
-        // the current chunk is flushed first and a fresh one is started afterward, so pieces on opposite sides of
-        // that split never end up in the same chunk, and no overlap is carried across it.
+        // A single piece that is already over budget on its own is split one level smaller instead (see Descend):
+        // the current chunk is flushed first and a fresh one is started afterward, so pieces on opposite sides of that split never end up in the same chunk, and no overlap is carried across it.
         private void PackRun(string text, IReadOnlyList<SentenceSpan> units, Tier tier,
             List<Chunk> chunks, ref int index)
         {
@@ -57,8 +56,8 @@ namespace FluentChunker.Chunkers.Recursive
             {
                 if (tokenCounts[i] > _maxTokens)
                 {
-                    // This piece is over budget by itself. 
-                    // Flush the current chunk, split just this piece one level smaller, 
+                    // This piece is over budget by itself.
+                    // Flush the current chunk, split just this piece one level smaller,
                     // then continue with an empty buffer so nothing before or after it is merged into the pieces the split produces.
                     FlushChunk(text, units, buffer, bufferOverlap, chunks, ref index);
                     buffer.Clear();
@@ -90,7 +89,7 @@ namespace FluentChunker.Chunkers.Recursive
             FlushChunk(text, units, buffer, bufferOverlap, chunks, ref index);
         }
 
-        // Builds the overlap the next chunk will start with: 
+        // Builds the overlap the next chunk will start with:
         // the last few whole pieces of the chunk just flushed, taken from the end backward, as many as fit in the overlap budget.
         private (List<int> Seed, int SeedTokens) SeedNextChunk(List<int> flushedUnits, int[] tokenCounts)
         {
@@ -110,7 +109,8 @@ namespace FluentChunker.Chunkers.Recursive
         }
 
         // The overlap pieces plus the incoming piece may not fit the chunk budget together.
-        // If they don't, drop overlap pieces from the front until they do. Staying within the budget always takes priority over keeping overlap.
+        // If they don't, drop overlap pieces from the front until they do.
+        // Staying within the budget always takes priority over keeping overlap.
         private void TrimSeedToFit(List<int> seed, ref int bufferTokens, ref int bufferOverlap,
             int incomingTokenCount, int[] tokenCounts)
         {
@@ -140,9 +140,8 @@ namespace FluentChunker.Chunkers.Recursive
             }
         }
 
-        // SentenceSplitter works on a standalone string whose positions start at 0, but this piece sits at unit.
-        // Start inside the document. Split a copy of just this piece, then shift every returned position by unit.
-        // Start so the spans point back into the original document rather than into the copy.
+        // SentenceSplitter works on a standalone string whose positions start at 0, but this piece sits at an offset inside the document.
+        // Split a copy of just this piece, then shift every returned position by that offset so the spans point back into the original document.
         private IReadOnlyList<SentenceSpan> SplitSentences(string text, SentenceSpan unit)
         {
             var slice = text.Substring(unit.Start, unit.Length);
@@ -159,7 +158,7 @@ namespace FluentChunker.Chunkers.Recursive
 
         // A single sentence over budget has no structural boundary left to split on, so cut it into token windows instead.
         // The windows are sized as evenly as possible (rather than filling each to the max and leaving a tiny last one) and do not overlap.
-        // Unlike every other chunk, this text is rebuilt from tokens instead of sliced from the source, 
+        // Unlike every other chunk, this text is rebuilt from tokens instead of sliced from the source,
         // so it may gain a leading space that the tokenizer attaches to the first word.
         private void EmitTokenWindows(string text, SentenceSpan sentence,
             List<Chunk> chunks, ref int index)
@@ -180,8 +179,9 @@ namespace FluentChunker.Chunkers.Recursive
             }
         }
 
-        // Counts the tokens of each piece. From the second piece onward the count includes the whitespace between it and the previous piece,
-        // because a chunk is later sliced as one continuous span and that in-between whitespace ends up inside the slice. 
+        // Counts the tokens of each piece.
+        // From the second piece onward the count includes the whitespace between it and the previous piece,
+        // because a chunk is later sliced as one continuous span and that in-between whitespace ends up inside the slice.
         // Counting it here keeps the packing decision honest about the chunk's real size.
         private int[] CountUnitTokens(string text, IReadOnlyList<SentenceSpan> units)
         {

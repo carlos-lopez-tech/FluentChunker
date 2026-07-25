@@ -92,9 +92,7 @@ namespace FluentChunker.Tests
         [Test]
         public void Split_DigitAfterTerminator_SplitsSentence()
         {
-            // Arrange
-            // Next char after the terminator is a digit (not uppercase), so the split
-            // can only happen via the char.IsDigit branch of IsSentenceBoundary.
+            // Arrange Next char after the terminator is a digit (not uppercase), so the split can only happen via the char.IsDigit branch of IsSentenceBoundary.
             var text = "Done here. 2 more to go.";
 
             // Act
@@ -218,7 +216,7 @@ namespace FluentChunker.Tests
         [Test]
         public void Split_UnknownAbbreviationWithoutCustomSet_SplitsFalsely()
         {
-            // Arrange — documents the behavior Split_CustomAbbreviation_DoesNotSplit fixes
+            // Arrange - documents the behavior Split_CustomAbbreviation_DoesNotSplit fixes
             var text = "Vgl. Abschnitt 3 im Buch. Weiter geht es.";
 
             // Act

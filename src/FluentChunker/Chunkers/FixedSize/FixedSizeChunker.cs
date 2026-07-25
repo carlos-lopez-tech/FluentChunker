@@ -7,11 +7,10 @@ namespace FluentChunker.Chunkers.FixedSize
     /// Splits a document into fixed-size token windows of at most <c>maxTokens</c> tokens,
     /// optionally overlapping by <c>overlap</c> tokens.
     /// </summary>
-    /// <remarks>Creates a fixed-size chunker.</remarks>
     /// <param name="tokenizer">The tokenizer used to encode and decode the document.</param>
     /// <param name="maxTokens">Upper token bound per chunk; must be positive.</param>
     /// <param name="overlap">Tokens shared between consecutive chunks; must be smaller than <paramref name="maxTokens"/>.</param>
-    public class FixedSizeChunker(ITokenizer tokenizer, int maxTokens, int overlap) : IChunker
+    internal class FixedSizeChunker(ITokenizer tokenizer, int maxTokens, int overlap) : IChunker
     {
         private readonly ITokenizer _tokenizer = tokenizer;
         private readonly int _maxTokens = maxTokens;
@@ -31,8 +30,8 @@ namespace FluentChunker.Chunkers.FixedSize
             var chunks = new List<Chunk>();
             var index = 0;
 
-            // Slide a window of maxTokens across the token list, stepping forward by
-            // (maxTokens - overlap) so each window shares exactly overlap tokens with the previous one.
+            // Slide a window of maxTokens across the token list,
+            // stepping forward by (maxTokens - overlap) so each window shares exactly overlap tokens with the previous one.
             foreach (var (start, length) in TokenWindows.Strided(allTokens.Count, _maxTokens, _maxTokens - _overlap))
             {
                 var window = TokenWindows.Slice(allTokens, start, length);
@@ -42,8 +41,8 @@ namespace FluentChunker.Chunkers.FixedSize
                     Index = index++,
                     Text = _tokenizer.Decode(window),
                     TokenCount = length,
-                    // Tokens carried into this chunk from the previous one; the final window can
-                    // be shorter than the overlap, in which case it is carried content entirely.
+                    // Tokens carried into this chunk from the previous one.
+                    // The final window can be shorter than the overlap, in which case it is carried content entirely.
                     OverlapCount = index == 1 ? 0 : Math.Min(_overlap, length)
                 });
             }

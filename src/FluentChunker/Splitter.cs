@@ -7,8 +7,16 @@ using FluentChunker.Tokenizers;
 
 namespace FluentChunker
 {
+    /// <summary>
+    /// Container for the splitter builder passed to <see cref="ISplitterStep.UseSplitter(Action{Splitter.Builder})"/>.
+    /// </summary>
     public static class Splitter
     {
+        /// <summary>
+        /// Chooses the chunking strategy and its sizing.
+        /// Pick exactly one strategy, then set a max token size; both are required.
+        /// The strategy call determines which options remain available afterwards.
+        /// </summary>
         public class Builder
         {
             private readonly ITokenizer _tokenizer;
@@ -42,9 +50,9 @@ namespace FluentChunker
 
             /// <summary>
             /// Splits along a fixed hierarchy of separators (paragraphs, then lines, then sentences),
-            /// descending a level only for pieces that exceed the max. Chunks never merge across a
-            /// descent boundary and overlap resets to zero there. A sentence that alone exceeds the
-            /// max falls back to evenly balanced token windows.
+            /// descending a level only for pieces that exceed the max.
+            /// Chunks never merge across a descent boundary and overlap resets to zero there.
+            /// A sentence that alone exceeds the max falls back to evenly balanced token windows.
             /// </summary>
             /// <returns>The next step, which requires a max token size.</returns>
             public ChunkingStrategyStep WithRecursiveChunking()
@@ -54,11 +62,12 @@ namespace FluentChunker
             }
 
             /// <summary>
-            /// Splits Markdown at its headings. Sections are hard boundaries: 
-            /// a chunk never spans two, and each one carries its heading path (e.g. <c>"Guide > Setup"</c>) 
-            /// in <c>Chunk.Metadata["headingPath"]</c>, a key reserved for this strategy. 
-            /// Code fences, tables, lists and quotes stay atomic while they fit the budget; an oversized paragraph descends to sentences. 
-            /// Text without Markdown structure degrades to paragraph packing with an empty heading path. Applies no overlap by design.
+            /// Splits Markdown at its headings.
+            /// Sections are hard boundaries:
+            /// a chunk never spans two, and each one carries its heading path (e.g. <c>"Guide > Setup"</c>) in <c>Chunk.Metadata["headingPath"]</c>, a key reserved for this strategy.
+            /// Code fences, tables, lists and quotes stay atomic while they fit the budget; an oversized paragraph descends to sentences.
+            /// Text without Markdown structure degrades to paragraph packing with an empty heading path.
+            /// Applies no overlap by design.
             /// </summary>
             /// <returns>The next step, which requires a max token size.</returns>
             public StructureAwareStrategyStep WithStructureAwareChunking()
@@ -87,8 +96,7 @@ namespace FluentChunker
             {
                 ArgumentNullException.ThrowIfNull(abbreviations);
 
-                // Validate the whole batch before mutating any state, so a bad entry
-                // (e.g. an all-dots string that trims down to empty) never partially applies.
+                // Validate the whole batch before mutating any state, so a bad entry (e.g. an all-dots string that trims down to empty) never partially applies.
                 var trimmed = new string[abbreviations.Length];
                 for (var i = 0; i < abbreviations.Length; i++)
                 {
@@ -106,6 +114,10 @@ namespace FluentChunker
                 }
             }
 
+            /// <summary>
+            /// Stage reached after choosing fixed-size, sentence-aware or recursive chunking,
+            /// where the max token size is still required.
+            /// </summary>
             public class ChunkingStrategyStep
             {
                 private readonly Builder _builder;
@@ -115,7 +127,8 @@ namespace FluentChunker
                 /// <summary>
                 /// Sets the maximum number of tokens a single chunk may contain.
                 /// </summary>
-                /// <param name="maxTokens">The chunk size limit in tokens. Must be positive.</param>
+                /// <param name="maxTokens">The chunk size limit in tokens.
+                /// Must be positive.</param>
                 /// <returns>The final step, where overlap and abbreviations can optionally be configured.</returns>
                 /// <exception cref="ArgumentOutOfRangeException"><paramref name="maxTokens"/> is zero or negative.</exception>
                 public MaxTokenSizeStep WithMaxTokenSize(int maxTokens)
@@ -125,6 +138,10 @@ namespace FluentChunker
                 }
             }
 
+            /// <summary>
+            /// Final stage for fixed-size, sentence-aware and recursive chunking, offering overlap and abbreviations.
+            /// Both are optional.
+            /// </summary>
             public class MaxTokenSizeStep
             {
                 private readonly Builder _builder;
@@ -132,10 +149,11 @@ namespace FluentChunker
                 internal MaxTokenSizeStep(Builder builder) => _builder = builder;
 
                 /// <summary>
-                /// Carries context from the end of one chunk into the start of the next; each chunk's <c>OverlapCount</c> reports the tokens it received. 
+                /// Carries context from the end of one chunk into the start of the next; each chunk's <c>OverlapCount</c> reports the tokens it received.
                 /// Sentence-aware and recursive chunking round to whole units, and recursive chunking resets at structural seams.
                 /// </summary>
-                /// <param name="overlap">The overlap size in tokens. Must be non-negative and less than the max token size.</param>
+                /// <param name="overlap">The overlap size in tokens.
+                /// Must be non-negative and less than the max token size.</param>
                 /// <returns>The same step, for further optional configuration.</returns>
                 /// <exception cref="ArgumentOutOfRangeException"><paramref name="overlap"/> is negative, or greater than or equal to the max token size.</exception>
                 public MaxTokenSizeStep WithOverlap(int overlap)
@@ -149,10 +167,12 @@ namespace FluentChunker
                 }
 
                 /// <summary>
-                /// Adds abbreviations whose trailing period should not end a sentence (e.g. <c>"Prof."</c>), extending the built-in EN/DE/FR/ES set. 
-                /// Matching is case-insensitive, and repeated calls accumulate instead of replacing. Only sentence-aware and recursive chunking consult them.
+                /// Adds abbreviations whose trailing period should not end a sentence (e.g. <c>"Prof."</c>), extending the built-in EN/DE/FR/ES set.
+                /// Matching is case-insensitive, and repeated calls accumulate instead of replacing.
+                /// Only sentence-aware and recursive chunking consult them.
                 /// </summary>
-                /// <param name="abbreviations">The abbreviations to add. Entries must be non-empty after trimming trailing dots.</param>
+                /// <param name="abbreviations">The abbreviations to add.
+                /// Entries must be non-empty after trimming trailing dots.</param>
                 /// <returns>The same step, for further optional configuration.</returns>
                 /// <exception cref="ArgumentNullException"><paramref name="abbreviations"/> is null.</exception>
                 /// <exception cref="ArgumentException">An entry is empty or consists only of dots or whitespace.</exception>
@@ -163,6 +183,9 @@ namespace FluentChunker
                 }
             }
 
+            /// <summary>
+            /// Stage reached after choosing structure-aware chunking, where the max token size is still required.
+            /// </summary>
             public class StructureAwareStrategyStep
             {
                 private readonly Builder _builder;
@@ -172,9 +195,10 @@ namespace FluentChunker
                 /// <summary>
                 /// Sets the maximum number of tokens a single chunk may contain.
                 /// </summary>
-                /// <param name="maxTokens">The chunk size limit in tokens. Must be positive.</param>
-                /// <returns>The final step. Structure-aware chunking has no overlap, so it offers
-                /// only abbreviations, no <c>WithOverlap</c>.</returns>
+                /// <param name="maxTokens">The chunk size limit in tokens.
+                /// Must be positive.</param>
+                /// <returns>The final step.
+                /// Structure-aware chunking has no overlap, so it offers only abbreviations, no <c>WithOverlap</c>.</returns>
                 /// <exception cref="ArgumentOutOfRangeException"><paramref name="maxTokens"/> is zero or negative.</exception>
                 public StructureAwareOptionsStep WithMaxTokenSize(int maxTokens)
                 {
@@ -183,6 +207,10 @@ namespace FluentChunker
                 }
             }
 
+            /// <summary>
+            /// Final stage for structure-aware chunking.
+            /// Offers abbreviations but deliberately no <c>WithOverlap</c>, since heading sections are hard boundaries.
+            /// </summary>
             public class StructureAwareOptionsStep
             {
                 private readonly Builder _builder;
@@ -190,10 +218,12 @@ namespace FluentChunker
                 internal StructureAwareOptionsStep(Builder builder) => _builder = builder;
 
                 /// <summary>
-                /// Adds abbreviations whose trailing period should not end a sentence (e.g. <c>"Prof."</c>), extending the built-in EN/DE/FR/ES set. 
-                /// Matching is case-insensitive, and repeated calls accumulate instead of replacing. Consulted only when an oversized paragraph descends to sentences.
+                /// Adds abbreviations whose trailing period should not end a sentence (e.g. <c>"Prof."</c>), extending the built-in EN/DE/FR/ES set.
+                /// Matching is case-insensitive, and repeated calls accumulate instead of replacing.
+                /// Consulted only when an oversized paragraph descends to sentences.
                 /// </summary>
-                /// <param name="abbreviations">The abbreviations to add. Entries must be non-empty after trimming trailing dots.</param>
+                /// <param name="abbreviations">The abbreviations to add.
+                /// Entries must be non-empty after trimming trailing dots.</param>
                 /// <returns>The same step, for further optional configuration.</returns>
                 /// <exception cref="ArgumentNullException"><paramref name="abbreviations"/> is null.</exception>
                 /// <exception cref="ArgumentException">An entry is empty or consists only of dots or whitespace.</exception>

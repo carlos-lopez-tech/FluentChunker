@@ -202,8 +202,7 @@ namespace FluentChunker.Tests
         [Test]
         public void Parse_FencedCodeWithBlankLines_IsSingleAtomicBlock()
         {
-            // Arrange - the blank line inside the fence would split a paragraph-based
-            // splitter (like BlockSplitter); the Markdown parser must keep the fence whole.
+            // Arrange - the blank line inside the fence would split a paragraph-based splitter (like BlockSplitter); the Markdown parser must keep the fence whole.
             var text = "## Benchmark Configuration\n\n" +
                        "```text\n" +
                        "maxTokens: 128\n" +

@@ -5,6 +5,10 @@ using System.Text.Json;
 
 namespace FluentChunker
 {
+    /// <summary>
+    /// An immutable, reusable chunking configuration.
+    /// Build one with <see cref="Builder"/>, then run it against as many documents as needed.
+    /// </summary>
     public record ChunkingPipeline
     {
         private readonly IChunker _chunker;
@@ -16,8 +20,22 @@ namespace FluentChunker
             _metadata = metadata;
         }
 
+        /// <summary>
+        /// Splits a document, stamping every chunk with the pipeline-level metadata.
+        /// </summary>
+        /// <param name="document">The document to split.</param>
+        /// <returns>The chunks, in document order.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="document"/> is null.</exception>
         public IReadOnlyList<Chunk> Execute(string document) => Execute(document, null);
 
+        /// <summary>
+        /// Splits a document, adding metadata that applies only to this call.
+        /// Document values overwrite pipeline values on key collisions and never leak into later calls.
+        /// </summary>
+        /// <param name="document">The document to split.</param>
+        /// <param name="configureMetadata">Populates the document-level metadata, or null for none.</param>
+        /// <returns>The chunks, in document order.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="document"/> is null.</exception>
         public IReadOnlyList<Chunk> Execute(string document, Action<MetadataBuilder>? configureMetadata)
         {
             ArgumentNullException.ThrowIfNull(document);
@@ -48,7 +66,7 @@ namespace FluentChunker
             configureMetadata(metadataBuilder);
             var documentMetadata = metadataBuilder.Build();
 
-            // merged locally so the pipeline stays immutable - document values must not leak into later Execute calls
+            // Copied rather than mutated, so the pipeline stays immutable and reusable across documents
             var merged = new Dictionary<string, JsonElement>(_metadata);
             foreach (var kvp in documentMetadata)
             {
@@ -58,6 +76,11 @@ namespace FluentChunker
             return merged;
         }
 
+        /// <summary>
+        /// Builds a <see cref="ChunkingPipeline"/>.
+        /// Start with <see cref="Initialize"/>; the returned step interfaces expose only the calls that are valid at each stage.
+        /// A builder can be built more than once, and each result is independent.
+        /// </summary>
         public class Builder : ITokenizerStep, ISplitterStep, IOptionalStep
         {
             private ITokenizer? _tokenizer;
@@ -70,12 +93,13 @@ namespace FluentChunker
             }
 
             /// <summary>
-            /// Starts building a <see cref="ChunkingPipeline"/>. The builder guides you through the
-            /// required steps in order: tokenizer, then splitter, then optional metadata.
+            /// Starts building a <see cref="ChunkingPipeline"/>.
+            /// The builder guides you through the required steps in order: tokenizer, then splitter, then optional metadata.
             /// </summary>
             /// <returns>The first step, which requires a tokenizer.</returns>
             public static ITokenizerStep Initialize() => new Builder();
 
+            /// <inheritdoc/>
             public ISplitterStep UseTokenizer(ITokenizer tokenizer)
             {
                 ArgumentNullException.ThrowIfNull(tokenizer);
@@ -83,6 +107,7 @@ namespace FluentChunker
                 return this;
             }
 
+            /// <inheritdoc/>
             public IOptionalStep UseSplitter(Action<Splitter.Builder> buildSplitterAction)
             {
                 ArgumentNullException.ThrowIfNull(buildSplitterAction);
@@ -94,6 +119,7 @@ namespace FluentChunker
                 return this;
             }
 
+            /// <inheritdoc/>
             public IOptionalStep AddMetadata(Action<MetadataBuilder> configure)
             {
                 ArgumentNullException.ThrowIfNull(configure);
@@ -101,6 +127,7 @@ namespace FluentChunker
                 return this;
             }
 
+            /// <inheritdoc/>
             public ChunkingPipeline Build()
             {
                 ArgumentNullException.ThrowIfNull(_chunker);
@@ -118,18 +145,25 @@ namespace FluentChunker
         }
     }
 
+    /// <summary>
+    /// Builder stage requiring a tokenizer.
+    /// Hidden from IntelliSense: reach it through <see cref="ChunkingPipeline.Builder.Initialize"/> rather than naming it.
+    /// </summary>
     [EditorBrowsable(EditorBrowsableState.Never)]
     public interface ITokenizerStep
     {
         /// <summary>
         /// Sets the tokenizer used to count tokens when sizing chunks.
         /// </summary>
-        /// <param name="tokenizer">The tokenizer implementation (e.g. a SharpToken or Microsoft.ML.Tokenizers adapter).</param>
+        /// <param name="tokenizer">The tokenizer implementation (e.g. <see cref="Tokenizers.MicrosoftMLTokenizerAdapter"/> or a custom <see cref="ITokenizer"/>).</param>
         /// <returns>The next step, which requires a splitter.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="tokenizer"/> is null.</exception>
         ISplitterStep UseTokenizer(ITokenizer tokenizer);
     }
 
+    /// <summary>
+    /// Builder stage requiring a splitter, reached once a tokenizer is set.
+    /// </summary>
     [EditorBrowsable(EditorBrowsableState.Never)]
     public interface ISplitterStep
     {
@@ -144,21 +178,21 @@ namespace FluentChunker
         IOptionalStep UseSplitter(Action<Splitter.Builder> buildSplitterAction);
     }
 
+    /// <summary>
+    /// Final builder stage, reached once a splitter is configured.
+    /// Everything here is optional except <see cref="Build"/>.
+    /// </summary>
     [EditorBrowsable(EditorBrowsableState.Never)]
     public interface IOptionalStep
     {
         /// <summary>
         /// Adds pipeline-level metadata that is stamped onto every chunk of every document.
-        /// Calling this multiple times composes: all configured entries are applied, with
-        /// later registrations overwriting earlier ones on key collisions.
+        /// Calling this multiple times composes: all configured entries are applied, with later registrations overwriting earlier ones on key collisions.
         /// </summary>
         /// <param name="configure">Populates the metadata entries.</param>
         /// <returns>The same step, for further optional configuration.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="configure"/> is null.</exception>
         IOptionalStep AddMetadata(Action<MetadataBuilder> configure);
-
-        //IOptionalStep UseTransform(Action<Transform.Builder> buildTransformAction);
-        //IOptionalStep UseEnrichment(Action<Enrichment.Builder> buildEnrichmentAction);
 
         /// <summary>
         /// Creates the immutable <see cref="ChunkingPipeline"/> from the configured steps.

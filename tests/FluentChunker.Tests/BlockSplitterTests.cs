@@ -25,7 +25,7 @@ namespace FluentChunker.Tests
         [Test]
         public void SplitParagraphs_BlankLineContainingSpaces_StillSeparates()
         {
-            // Arrange — the "blank" line holds spaces and a tab, which must not join the paragraphs
+            // Arrange - the "blank" line holds spaces and a tab, which must not join the paragraphs
             var text = "First paragraph.\n  \t \nSecond paragraph.";
 
             // Act
@@ -49,7 +49,7 @@ namespace FluentChunker.Tests
             // Act
             var spans = BlockSplitter.SplitParagraphs(text, 0, text.Length);
 
-            // Assert — exactly two spans, none of them empty
+            // Assert - exactly two spans, none of them empty
             Assert.That(spans, Has.Count.EqualTo(2));
             foreach (var span in spans)
             {
@@ -66,7 +66,7 @@ namespace FluentChunker.Tests
             // Act
             var spans = BlockSplitter.SplitParagraphs(text, 0, text.Length);
 
-            // Assert — two paragraphs, and no span carries a trailing '\r'
+            // Assert - two paragraphs, and no span carries a trailing '\r'
             Assert.That(spans, Has.Count.EqualTo(2));
             using (Assert.EnterMultipleScope())
             {
@@ -78,7 +78,7 @@ namespace FluentChunker.Tests
         [Test]
         public void SplitParagraphs_NoBlankLines_ReturnsSingleSpan()
         {
-            // Arrange — single line breaks do NOT separate paragraphs
+            // Arrange - single line breaks do NOT separate paragraphs
             var text = "First line.\nSecond line.";
 
             // Act
@@ -105,13 +105,13 @@ namespace FluentChunker.Tests
         [Test]
         public void SplitParagraphs_Spans_SliceBackToOriginalText()
         {
-            // Arrange — leading/trailing whitespace around the document must stay outside every span
+            // Arrange - leading/trailing whitespace around the document must stay outside every span
             var text = "\n\n  First paragraph.  \n\nSecond paragraph.\n\n";
 
             // Act
             var spans = BlockSplitter.SplitParagraphs(text, 0, text.Length);
 
-            // Assert — spans are trimmed to content on both ends
+            // Assert - spans are trimmed to content on both ends
             Assert.That(spans, Has.Count.EqualTo(2));
             using (Assert.EnterMultipleScope())
             {
@@ -148,7 +148,7 @@ namespace FluentChunker.Tests
             // Act
             var spans = BlockSplitter.SplitLines(text, 0, text.Length);
 
-            // Assert — no span may end on the '\r' before the line break
+            // Assert - no span may end on the '\r' before the line break
             Assert.That(spans, Has.Count.EqualTo(3));
             foreach (var span in spans)
             {
@@ -165,7 +165,7 @@ namespace FluentChunker.Tests
             // Act
             var spans = BlockSplitter.SplitLines(text, 0, text.Length);
 
-            // Assert — the blank middle line yields nothing
+            // Assert - the blank middle line yields nothing
             Assert.That(spans, Has.Count.EqualTo(2));
             using (Assert.EnterMultipleScope())
             {
@@ -191,7 +191,7 @@ namespace FluentChunker.Tests
         [Test]
         public void SplitLines_SubRangeOfDocument_ReturnsOriginalTextCoordinates()
         {
-            // Arrange — only the middle region is split; spans must still index into the full text
+            // Arrange - only the middle region is split; spans must still index into the full text
             var text = "HEADER\nAlpha beta.\nGamma delta.\nFOOTER";
             var start = text.IndexOf("Alpha", StringComparison.Ordinal);
             var length = text.IndexOf("\nFOOTER", StringComparison.Ordinal) - start;

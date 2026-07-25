@@ -11,7 +11,7 @@ Split text into meaningful chunks for RAG (Retrieval-Augmented Generation), embe
 - **Recursive chunking**: Split along a fixed structural hierarchy (paragraphs, then lines, then sentences), descending a level only for pieces that exceed the budget; chunks respect the largest structural boundary possible
 - **Structure-aware chunking (Markdown)**: Split Markdown documents at heading boundaries with a `headingPath` breadcrumb stamped into each chunk's metadata; code fences, tables and lists stay atomic; no overlap by design
 - **Token-aware chunking**: Split text by token count with accurate token counting
-- **Customizable tokenizers**: Plug in your own tokenizer implementation or use built-in Microsoft.ML.Tokenizers, SharpToken integration
+- **Customizable tokenizers**: Use the built-in Microsoft.ML.Tokenizers integration or plug in your own tokenizer implementation
 - **Overlap support**: Configure token overlap between chunks to preserve context; overlap is budgeted inside the max token size, so chunks never exceed it
 - **Two metadata scopes**: Attach pipeline-level metadata (constant per run) and document-level metadata (per `Execute` call) to each chunk
 - **Reusable pipelines**: Build once, execute against many documents; metadata never leaks between calls
@@ -20,9 +20,12 @@ Split text into meaningful chunks for RAG (Retrieval-Augmented Generation), embe
 
 ```csharp
 using FluentChunker;
+using FluentChunker.Tokenizers;
 
 // Create tokenizer and fluent pipeline
-var tokenizer = new MicrosoftMLTokenizerAdapter("o200k_base");
+// cl100k_base is the encoding of the OpenAI embedding models, the usual target when indexing for RAG.
+// It is the encoding included with FluentChunker. See Tokenizers below for chat model encodings.
+var tokenizer = new MicrosoftMLTokenizerAdapter("cl100k_base");
 
 var pipeline = ChunkingPipeline.Builder.Initialize()
     .UseTokenizer(tokenizer)
@@ -50,10 +53,8 @@ foreach (var chunk in chunks)
 
 ## Installation
 
-Not yet published to NuGet. Reference the project directly:
-
 ```bash
-dotnet add reference path/to/src/FluentChunker/FluentChunker.csproj
+dotnet add package FluentChunker
 ```
 
 ## Usage Examples
@@ -61,7 +62,7 @@ dotnet add reference path/to/src/FluentChunker/FluentChunker.csproj
 ### Basic Fixed-Size Chunking
 
 ```csharp
-var tokenizer = new MicrosoftMLTokenizerAdapter("o200k_base");
+var tokenizer = new MicrosoftMLTokenizerAdapter("cl100k_base");
 
 var pipeline = ChunkingPipeline.Builder.Initialize()
     .UseTokenizer(tokenizer)
@@ -76,7 +77,7 @@ var chunks = pipeline.Execute(text);
 ### Chunking with Overlap
 
 ```csharp
-var tokenizer = new MicrosoftMLTokenizerAdapter("o200k_base");
+var tokenizer = new MicrosoftMLTokenizerAdapter("cl100k_base");
 
 var pipeline = ChunkingPipeline.Builder.Initialize()
     .UseTokenizer(tokenizer)
@@ -92,7 +93,7 @@ var chunks = pipeline.Execute(text);
 ### Sentence-Aware Chunking
 
 ```csharp
-var tokenizer = new MicrosoftMLTokenizerAdapter("o200k_base");
+var tokenizer = new MicrosoftMLTokenizerAdapter("cl100k_base");
 
 var pipeline = ChunkingPipeline.Builder.Initialize()
     .UseTokenizer(tokenizer)
@@ -117,7 +118,7 @@ Chunks contain whole sentences and are verbatim slices of the source text: white
 ### Recursive Chunking
 
 ```csharp
-var tokenizer = new MicrosoftMLTokenizerAdapter("o200k_base");
+var tokenizer = new MicrosoftMLTokenizerAdapter("cl100k_base");
 
 var pipeline = ChunkingPipeline.Builder.Initialize()
     .UseTokenizer(tokenizer)
@@ -140,7 +141,7 @@ Chunks are verbatim slices of the source (interior line breaks preserved); only 
 ### Structure-Aware Chunking (Markdown)
 
 ```csharp
-var tokenizer = new MicrosoftMLTokenizerAdapter("o200k_base");
+var tokenizer = new MicrosoftMLTokenizerAdapter("cl100k_base");
 
 var pipeline = ChunkingPipeline.Builder.Initialize()
     .UseTokenizer(tokenizer)
@@ -167,7 +168,7 @@ Designed for Markdown content: every heading (ATX `#`..`######` or Setext underl
 ### Adding Custom Metadata
 
 ```csharp
-var tokenizer = new MicrosoftMLTokenizerAdapter("o200k_base");
+var tokenizer = new MicrosoftMLTokenizerAdapter("cl100k_base");
 
 var pipeline = ChunkingPipeline.Builder.Initialize()
     .UseTokenizer(tokenizer)
@@ -196,7 +197,7 @@ foreach (var chunk in chunks)
 Pipeline-level metadata (`AddMetadata`) is constant for the whole run; document-level metadata is passed per `Execute` call. On key collision, the document value wins.
 
 ```csharp
-var tokenizer = new MicrosoftMLTokenizerAdapter("o200k_base");
+var tokenizer = new MicrosoftMLTokenizerAdapter("cl100k_base");
 
 var pipeline = ChunkingPipeline.Builder.Initialize()
     .UseTokenizer(tokenizer)
@@ -225,7 +226,7 @@ foreach (var doc in documents)
 FluentChunker includes built-in support for [Microsoft.ML.Tokenizers](https://www.nuget.org/packages/Microsoft.ML.Tokenizers), enabling accurate token counting for OpenAI models:
 
 ```csharp
-var tokenizer = new MicrosoftMLTokenizerAdapter("o200k_base"); // GPT-4o tokenizer
+var tokenizer = new MicrosoftMLTokenizerAdapter("cl100k_base"); // ships with FluentChunker
 var pipeline = ChunkingPipeline.Builder.Initialize()
     .UseTokenizer(tokenizer)
     .UseSplitter(s => s
@@ -234,9 +235,30 @@ var pipeline = ChunkingPipeline.Builder.Initialize()
     .Build();
 ```
 
-A second adapter, `SharpTokenizerAdapter`, wraps [SharpToken](https://github.com/dmitry-brazhenko/SharpToken) with the same encodings.
+Need a different tokenizer? Implement `ITokenizer` and pass it to `UseTokenizer` (see [Custom Tokenizers](#custom-tokenizers) below).
 
-Supported encoding models include `cl100k_base` (GPT-3.5, GPT-4), `o200k_base` (GPT-4o), and others.
+#### Choosing an encoding
+
+**Pick the encoding of the model that consumes the chunks.** In a RAG pipeline that is usually two different models: you size chunks against the *embedding* model when indexing, and against the *chat* model when assembling a prompt from retrieved chunks. The counts are not interchangeable. The same text can differ by roughly 10% between encodings, in either direction, so chunking prose to 8,000 `o200k_base` tokens can land near 8,600 `cl100k_base` tokens and blow past the 8,191 token limit of `text-embedding-3-large`.
+
+| Encoding | Use it when your chunks feed | Included? |
+|---|---|---|
+| `cl100k_base` | Embedding models: `text-embedding-3-small`, `text-embedding-3-large`, `text-embedding-ada-002`. Also legacy chat: GPT-4, GPT-3.5 | **Yes** |
+| `o200k_base` | Chat and reasoning models: GPT-5, o1, o3, o4-mini, GPT-4.1, GPT-4.5, GPT-4o | No, add the package |
+| `p50k_base`, `r50k_base`, `gpt2` | Legacy GPT-3 and Codex models | No, add the package |
+
+Only `cl100k_base` ships with FluentChunker, because indexing documents for retrieval is the most common reason to reach for a chunker and that means sizing against an embedding model. Every example in this README uses it.
+
+Any other encoding needs its data package in your own project, otherwise the constructor throws an `InvalidOperationException` naming the package to add:
+
+```bash
+dotnet add package Microsoft.ML.Tokenizers.Data.O200kBase   # for o200k_base
+```
+
+```csharp
+// Budgeting retrieved chunks into a GPT-5 prompt, after adding the package above
+var chatTokenizer = new MicrosoftMLTokenizerAdapter("o200k_base");
+```
 
 ### Custom Tokenizers
 
@@ -314,9 +336,8 @@ Implement to use custom tokenization:
 
 ## Requirements
 
-- .NET 10.0 or later
-- Microsoft.ML.Tokenizers 2.0.0 or later (included as dependency)
-- SharpToken 2.0.6 or later (included as dependency)
+- .NET 8.0 or later (the package targets `net8.0` and `net10.0`)
+- Microsoft.ML.Tokenizers 2.0.0 or later, with the `cl100k_base` data package (included as dependencies)
 - Markdig 1.3.2 or later (included as dependency; used by structure-aware chunking)
 
 ## Development

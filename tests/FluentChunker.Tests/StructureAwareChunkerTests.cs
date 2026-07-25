@@ -16,8 +16,7 @@ namespace FluentChunker.Tests
             "## Retrieval Notes\n\n" + ParagraphOne + "\n\n" +
             "## Ranking Results\n\n" + ParagraphTwo;
 
-        // One section whose heading is deliberately long (about 8 tokens) so that at a
-        // 15-token budget the heading never packs together with a paragraph (8 + 12 > 15),
+        // One section whose heading is deliberately long (about 8 tokens) so that at a 15-token budget the heading never packs together with a paragraph (8 + 12 > 15),
         // and no two paragraphs pack together either (10 + 12 > 15).
         private const string OversizedSection =
             "## Retrieval Notes From The Archive Session\n\n" +
@@ -28,7 +27,7 @@ namespace FluentChunker.Tests
         [SetUp]
         public void SetUp()
         {
-            _microsoftMLTokenizer = new MicrosoftMLTokenizerAdapter("o200k_base");
+            _microsoftMLTokenizer = new MicrosoftMLTokenizerAdapter("cl100k_base");
         }
 
         [Test]
@@ -60,8 +59,7 @@ namespace FluentChunker.Tests
         [Test]
         public void Chunk_TwoSmallSections_ProducesOneChunkPerSection()
         {
-            // Arrange - both sections together are far below the budget; only the hard
-            // seam at the second heading forces two chunks
+            // Arrange - both sections together are far below the budget; only the hard seam at the second heading forces two chunks
             var chunker = new StructureAwareChunker(_microsoftMLTokenizer, maxTokens: 100);
 
             // Act
@@ -184,8 +182,7 @@ namespace FluentChunker.Tests
         [Test]
         public void Chunk_CodeFenceWithBlankLines_StaysWholeWhenItFits()
         {
-            // Arrange - the blank line inside the fence would break recursive chunking's
-            // paragraph tier; the structure-aware strategy must keep the fence intact
+            // Arrange - the blank line inside the fence would break recursive chunking's paragraph tier; the structure-aware strategy must keep the fence intact
             var text = "## Benchmark Configuration\n\n" +
                        "```text\nmaxTokens: 128\n\noverlap: 16\n```";
             var chunker = new StructureAwareChunker(_microsoftMLTokenizer, maxTokens: 100);
@@ -270,14 +267,12 @@ namespace FluentChunker.Tests
             }
         }
 
-        // One paragraph of three sentences (about 25 tokens): oversized for a 15-token
-        // budget, while each sentence alone fits it.
+        // One paragraph of three sentences (about 25 tokens): oversized for a 15-token budget, while each sentence alone fits it.
         private const string ThreeSentenceParagraph =
             "The team compared several embedding models. Retrieval quality improved with token overlap. " +
             "Smaller chunks sharpened ranking precision.";
 
-        // A single sentence (about 24 tokens) with no internal structure at all: forces the
-        // token-window floor for any budget below its size.
+        // A single sentence (about 24 tokens) with no internal structure at all: forces the token-window floor for any budget below its size.
         private const string RunOnSentence =
             "The archive team spent the entire morning comparing retrieval pipelines and embedding " +
             "models while debating how overlapping chunks preserved context across long documents.";
@@ -292,8 +287,7 @@ namespace FluentChunker.Tests
             // Act
             var result = chunker.Chunk(text);
 
-            // Assert - after the heading chunk, every chunk is sentence-aligned and a
-            // verbatim slice of the source (token windows would cut mid-word and decode)
+            // Assert - after the heading chunk, every chunk is sentence-aligned and a verbatim slice of the source (token windows would cut mid-word and decode)
             Assert.That(result, Has.Count.GreaterThan(1));
             using (Assert.EnterMultipleScope())
             {
@@ -330,8 +324,7 @@ namespace FluentChunker.Tests
         [Test]
         public void Chunk_OversizedCodeFence_FallsBackToTokenWindowsWithHeadingPath()
         {
-            // Arrange - an atomic block over budget cannot descend into sentences; it must
-            // go straight to balanced token windows, still stamped with its heading path
+            // Arrange - an atomic block over budget cannot descend into sentences; it must go straight to balanced token windows, still stamped with its heading path
             var fenceLines = string.Join("\n",
                 Enumerable.Range(1, 30).Select(i => $"retrieval-metric-{i}: score"));
             var text = "## Benchmark Configuration\n\n```text\n" + fenceLines + "\n```";
@@ -357,8 +350,7 @@ namespace FluentChunker.Tests
         [Test]
         public void Chunk_SmallBlocksAroundOversizedParagraph_StayInTheirOwnChunks()
         {
-            // Arrange - plain text: small paragraph, oversized run-on paragraph, small
-            // paragraph; the small ones must never merge across the descent seam
+            // Arrange - plain text: small paragraph, oversized run-on paragraph, small paragraph; the small ones must never merge across the descent seam
             var text = ParagraphOne + "\n\n" + RunOnSentence + "\n\n" + ParagraphTwo;
             var chunker = new StructureAwareChunker(_microsoftMLTokenizer, maxTokens: 15);
 
@@ -374,9 +366,8 @@ namespace FluentChunker.Tests
             }
         }
 
-        // At maxTokens 6, "Vgl. Abschnitt 3 im Buch." only stays together when "Vgl" is
-        // registered as an abbreviation; without the guard the first sentence chunk is
-        // exactly "Vgl." (same proven sizing as the sentence-aware builder test).
+        // At maxTokens 6, "Vgl.
+        // Abschnitt 3 im Buch." only stays together when "Vgl" is registered as an abbreviation; without the guard the first sentence chunk is exactly "Vgl." (same proven sizing as the sentence-aware builder test).
         [Test]
         public void Chunk_CustomAbbreviation_SuppressesFalseSentenceBreakDuringDescent()
         {

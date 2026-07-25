@@ -7,13 +7,15 @@ namespace FluentChunker.Samples.Demo
     {
         static void Main()
         {
-            var content = File.ReadAllText("Testfiles\\testfile.txt");
-            const string EncodingName = "o200k_base";
+            var content = File.ReadAllText(SampleFile("testfile.txt"));
 
-            // Create an instance of MicrosoftMLTokenizerAdapter with the specified encoding
+            // The encoding FluentChunker ships, used by the OpenAI embedding models.
+            // Chunks feeding a chat model want o200k_base, which needs its own Microsoft.ML.Tokenizers.Data package.
+            const string EncodingName = "cl100k_base";
+
             var microsoftMLTokenizer = new MicrosoftMLTokenizerAdapter(EncodingName);
 
-            // Example 1: Create Pipeline by using Fixed-Size Chunking
+            // Example 1: Create Pipeline by using Fixed-Size Chunking.
             var pipeline1 = ChunkingPipeline.Builder.Initialize()
                 .UseTokenizer(microsoftMLTokenizer)
                 .UseSplitter(s => s
@@ -34,7 +36,7 @@ namespace FluentChunker.Samples.Demo
             PrintChunks(chunks1);
 
 
-            // Example 2: Create Pipeline by using Sentence-Aware Chunking
+            // Example 2: Create Pipeline by using Sentence-Aware Chunking.
             var pipeline2 = ChunkingPipeline.Builder.Initialize()
                 .UseTokenizer(microsoftMLTokenizer)
                 .UseSplitter(s => s
@@ -55,10 +57,10 @@ namespace FluentChunker.Samples.Demo
             PrintChunks(chunks2);
 
 
-            // Example 3: Create Pipeline by using Sentence-Aware Chunking with custom abbreviations
+            // Example 3: Create Pipeline by using Sentence-Aware Chunking with custom abbreviations.
             // "Fig.", "No." and "approx." are not in the built-in EN/DE/FR/ES set,
-            // so without AddAbbreviations the splitter would falsely end a sentence
-            // after each of them. Trailing dots are optional and matching is case-insensitive.
+            // so without AddAbbreviations the splitter would falsely end a sentence after each of them.
+            // Trailing dots are optional and matching is case-insensitive.
             var pipeline3 = ChunkingPipeline.Builder.Initialize()
                 .UseTokenizer(microsoftMLTokenizer)
                 .UseSplitter(s => s
@@ -84,9 +86,9 @@ namespace FluentChunker.Samples.Demo
             PrintChunks(chunks3);
 
 
-            // Example 4: Create Pipeline by using Recursive Chunking
+            // Example 4: Create Pipeline by using Recursive Chunking.
             // Splits along paragraphs -> lines -> sentences -> token windows,
-            // descending only for pieces that exceed the budget;
+            // descending only for pieces that exceed the budget,
             // chunks never merge across a structural seam and overlap resets to zero there.
             var pipeline4 = ChunkingPipeline.Builder.Initialize()
                 .UseTokenizer(microsoftMLTokenizer)
@@ -108,7 +110,7 @@ namespace FluentChunker.Samples.Demo
             PrintChunks(chunks4);
 
 
-            // Example 5: Recursive Chunking descending into an oversized paragraph
+            // Example 5: Recursive Chunking descending into an oversized paragraph.
             // A tight 30-token budget over the same archive/retrieval corpus:
             // the short title paragraph fits and stays its own chunk (strict seam - never merged with its oversized neighbor),
             // while the following paragraph alone blows the budget,
@@ -136,11 +138,12 @@ namespace FluentChunker.Samples.Demo
             PrintChunks(chunks5);
 
 
-            // Example 6: Structure-Aware Chunking over a Markdown document Headings are hard boundaries:
-            // a chunk never spans two sections, and every chunk carries its heading path in Metadata["headingPath"].
+            // Example 6: Structure-Aware Chunking over a Markdown document.
+            // Headings are hard boundaries: a chunk never spans two sections,
+            // and every chunk carries its heading path in Metadata["headingPath"].
             // Code fences, tables and lists stay whole while they fit, only an oversized paragraph descends to sentences.
             // This strategy has no overlap by design.
-            var markdownContent = File.ReadAllText("Testfiles\\testfile.md");
+            var markdownContent = File.ReadAllText(SampleFile("testfile.md"));
 
             var pipeline6 = ChunkingPipeline.Builder.Initialize()
                 .UseTokenizer(microsoftMLTokenizer)
@@ -160,8 +163,16 @@ namespace FluentChunker.Samples.Demo
             Console.WriteLine(">>> Example 6: Structure-Aware Chunking (Markdown sections) <<<\n");
             PrintChunks(chunks6);
 
-            Console.ReadKey();
+            // Keeps the window open when launched from a file explorer, but ReadKey throws whenever input is redirected, so skip it when piped or run in CI
+            if (!Console.IsInputRedirected)
+            {
+                Console.ReadKey();
+            }
         }
+
+        // Path.Combine keeps the separator correct off Windows, and the folder name matches the on-disk casing, which matters on case-sensitive filesystems
+        private static string SampleFile(string fileName) =>
+            Path.Combine(AppContext.BaseDirectory, "testfiles", fileName);
 
         private static void PrintChunks(IReadOnlyList<Chunk> chunks)
         {

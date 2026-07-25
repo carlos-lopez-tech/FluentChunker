@@ -1,0 +1,33 @@
+<Project>
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <Authors>Carlos Lopez Vaguez</Authors>
+    <Company>carlos-lopez-tech</Company>
+    <Product>FluentChunker</Product>
+    <Copyright>Copyright (c) 2026 Carlos Lopez Vaguez</Copyright>
+    <Description>Fluent, composable text chunking pipelines for .NET. Splits text into token-bounded chunks for RAG, embeddings and search indexing, with fixed-size, sentence-aware, recursive and Markdown structure-aware strategies, configurable overlap and per-chunk metadata.</Description>
+    <PackageTags>chunking;text-splitting;rag;embeddings;nlp;tokenizer;llm;semantic-search;markdown</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/carlos-lopez-tech/FluentChunker</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/carlos-lopez-tech/FluentChunker</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Version>1.0.0</Version>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
+  </PropertyGroup>
+
+</Project>

@@ -11,7 +11,7 @@ namespace FluentChunker.Tests
         [SetUp]
         public void SetUp()
         {
-            _microsoftMLTokenizer = new MicrosoftMLTokenizerAdapter("o200k_base");
+            _microsoftMLTokenizer = new MicrosoftMLTokenizerAdapter("cl100k_base");
         }
 
         [Test]
@@ -94,7 +94,7 @@ namespace FluentChunker.Tests
             // Act
             var result = chunker.Chunk(longText);
 
-            // Assert — OverlapCount reports tokens carried INTO a chunk (aligned with SentenceAwareChunker)
+            // Assert - OverlapCount reports tokens carried INTO a chunk (aligned with SentenceAwareChunker)
             Assert.That(result, Has.Count.GreaterThan(1));
             Assert.That(result[0].OverlapCount, Is.Zero);
             for (var i = 1; i < result.Count; i++)
