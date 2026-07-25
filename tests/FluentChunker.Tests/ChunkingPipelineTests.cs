@@ -15,10 +15,10 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Execute_FixedSizeSplitterWithMaxTokenSize_ReturnsFullChunks()
+        public void Chunk_FixedSizeSplitterWithMaxTokenSize_ReturnsFullChunks()
         {
             // Arrange
-            var pipeline = ChunkingPipeline.Builder.Initialize()
+            var pipeline = ChunkingPipeline.CreateBuilder()
                 .UseTokenizer(_microsoftMLTokenizer)
                 .UseSplitter(s => s
                     .WithFixedSizeChunking()
@@ -26,7 +26,7 @@ namespace FluentChunker.Tests
                 .Build();
 
             // Act
-            var chunks = pipeline.Execute(InputText);
+            var chunks = pipeline.Chunk(InputText);
 
             // Assert
             Assert.That(chunks, Has.Count.EqualTo(2));
@@ -38,10 +38,10 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Execute_FixedSizeSplitterWithOverlap_MarksOverlapOnReceivingChunks()
+        public void Chunk_FixedSizeSplitterWithOverlap_MarksOverlapOnReceivingChunks()
         {
             // Arrange
-            var pipeline = ChunkingPipeline.Builder.Initialize()
+            var pipeline = ChunkingPipeline.CreateBuilder()
                 .UseTokenizer(_microsoftMLTokenizer)
                 .UseSplitter(s => s
                     .WithFixedSizeChunking()
@@ -50,7 +50,7 @@ namespace FluentChunker.Tests
                 .Build();
 
             // Act
-            var chunks = pipeline.Execute(InputText);
+            var chunks = pipeline.Chunk(InputText);
 
             // Assert - OverlapCount reports tokens carried INTO a chunk: 0 on the first,
             // the overlap on every following chunk (same semantics as SentenceAwareChunker)
@@ -63,10 +63,10 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Execute_NullDocument_ThrowsArgumentNullException()
+        public void Chunk_NullDocument_ThrowsArgumentNullException()
         {
             // Arrange
-            var pipeline = ChunkingPipeline.Builder.Initialize()
+            var pipeline = ChunkingPipeline.CreateBuilder()
                 .UseTokenizer(_microsoftMLTokenizer)
                 .UseSplitter(s => s
                     .WithFixedSizeChunking()
@@ -74,21 +74,21 @@ namespace FluentChunker.Tests
                 .Build();
 
             // Act & Assert
-            Assert.Throws<ArgumentNullException>(() => pipeline.Execute(null!));
+            Assert.Throws<ArgumentNullException>(() => pipeline.Chunk(null!));
         }
 
         [Test]
         public void Builder_MultipleInstancesWithDifferentConfigurations_DontInterfere()
         {
             // Arrange
-            var builder1 = ChunkingPipeline.Builder.Initialize()
+            var builder1 = ChunkingPipeline.CreateBuilder()
                 .UseTokenizer(_microsoftMLTokenizer)
                 .UseSplitter(s => s
                     .WithFixedSizeChunking()
                     .WithMaxTokenSize(10))
                 .AddMetadata(meta => meta.Set("Version", "1"));
 
-            var builder2 = ChunkingPipeline.Builder.Initialize()
+            var builder2 = ChunkingPipeline.CreateBuilder()
                 .UseTokenizer(_microsoftMLTokenizer)
                 .UseSplitter(s => s
                     .WithFixedSizeChunking()
@@ -99,8 +99,8 @@ namespace FluentChunker.Tests
             var pipeline1 = builder1.Build();
             var pipeline2 = builder2.Build();
 
-            var chunks1 = pipeline1.Execute(InputText);
-            var chunks2 = pipeline2.Execute(InputText);
+            var chunks1 = pipeline1.Chunk(InputText);
+            var chunks2 = pipeline2.Chunk(InputText);
 
             // Assert
             using (Assert.EnterMultipleScope())
@@ -115,7 +115,7 @@ namespace FluentChunker.Tests
         public void Builder_CanBeReusedForMultiplePipelines()
         {
             // Arrange
-            var builder = ChunkingPipeline.Builder.Initialize()
+            var builder = ChunkingPipeline.CreateBuilder()
                 .UseTokenizer(_microsoftMLTokenizer)
                 .UseSplitter(s => s
                     .WithFixedSizeChunking()
@@ -125,8 +125,8 @@ namespace FluentChunker.Tests
             var pipeline1 = builder.Build();
             var pipeline2 = builder.Build();
 
-            var chunks1 = pipeline1.Execute(InputText);
-            var chunks2 = pipeline2.Execute(InputText);
+            var chunks1 = pipeline1.Chunk(InputText);
+            var chunks2 = pipeline2.Chunk(InputText);
 
             // Assert
             Assert.That(chunks1, Has.Count.EqualTo(chunks2.Count));

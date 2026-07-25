@@ -15,10 +15,10 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Execute_PipelineMetadataConfigured_AttachesMetadataToAllChunks()
+        public void Chunk_PipelineMetadataConfigured_AttachesMetadataToAllChunks()
         {
             // Arrange
-            var pipeline = ChunkingPipeline.Builder.Initialize()
+            var pipeline = ChunkingPipeline.CreateBuilder()
                 .UseTokenizer(_microsoftMLTokenizer)
                 .UseSplitter(s => s
                     .WithFixedSizeChunking()
@@ -33,7 +33,7 @@ namespace FluentChunker.Tests
                 .Build();
 
             // Act
-            var chunks = pipeline.Execute(InputText);
+            var chunks = pipeline.Chunk(InputText);
 
             // Assert
             Assert.That(chunks, Has.Count.EqualTo(2));
@@ -49,10 +49,10 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Execute_WithoutMetadata_ReturnsChunksWithEmptyMetadata()
+        public void Chunk_WithoutMetadata_ReturnsChunksWithEmptyMetadata()
         {
             // Arrange
-            var pipeline = ChunkingPipeline.Builder.Initialize()
+            var pipeline = ChunkingPipeline.CreateBuilder()
                 .UseTokenizer(_microsoftMLTokenizer)
                 .UseSplitter(s => s
                     .WithFixedSizeChunking()
@@ -60,7 +60,7 @@ namespace FluentChunker.Tests
                 .Build();
 
             // Act
-            var chunks = pipeline.Execute(InputText);
+            var chunks = pipeline.Chunk(InputText);
 
             // Assert
             Assert.That(chunks, Has.Count.GreaterThan(1));
@@ -71,10 +71,10 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Execute_WithOverlapAndMetadata_AttachesMetadataToAllChunks()
+        public void Chunk_WithOverlapAndMetadata_AttachesMetadataToAllChunks()
         {
             // Arrange
-            var pipeline = ChunkingPipeline.Builder.Initialize()
+            var pipeline = ChunkingPipeline.CreateBuilder()
                 .UseTokenizer(_microsoftMLTokenizer)
                 .UseSplitter(s => s
                     .WithFixedSizeChunking()
@@ -84,7 +84,7 @@ namespace FluentChunker.Tests
                 .Build();
 
             // Act
-            var chunks = pipeline.Execute(InputText);
+            var chunks = pipeline.Chunk(InputText);
 
             // Assert - first chunk receives nothing; every following chunk receives the overlap
             Assert.That(chunks, Has.Count.GreaterThan(1));
@@ -103,7 +103,7 @@ namespace FluentChunker.Tests
         public void AddMetadata_CalledMultipleTimes_MergesAllEntries()
         {
             // Arrange
-            var pipeline = ChunkingPipeline.Builder.Initialize()
+            var pipeline = ChunkingPipeline.CreateBuilder()
                 .UseTokenizer(_microsoftMLTokenizer)
                 .UseSplitter(s => s
                     .WithFixedSizeChunking()
@@ -113,7 +113,7 @@ namespace FluentChunker.Tests
                 .Build();
 
             // Act
-            var chunks = pipeline.Execute(InputText);
+            var chunks = pipeline.Chunk(InputText);
 
             // Assert
             using (Assert.EnterMultipleScope())
@@ -124,10 +124,10 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Execute_WithDocumentMetadata_AttachesToAllChunks()
+        public void Chunk_WithDocumentMetadata_AttachesToAllChunks()
         {
             // Arrange
-            var pipeline = ChunkingPipeline.Builder.Initialize()
+            var pipeline = ChunkingPipeline.CreateBuilder()
                 .UseTokenizer(_microsoftMLTokenizer)
                 .UseSplitter(s => s
                     .WithFixedSizeChunking()
@@ -135,7 +135,7 @@ namespace FluentChunker.Tests
                 .Build();
 
             // Act
-            var chunks = pipeline.Execute(InputText, meta =>
+            var chunks = pipeline.Chunk(InputText, meta =>
             {
                 meta.Set("Url", "https://carloslopez.tech/doc-1");
                 meta.Set("Title", "Document One");
@@ -154,10 +154,10 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Execute_WithPipelineAndDocumentMetadata_MergesBoth()
+        public void Chunk_WithPipelineAndDocumentMetadata_MergesBoth()
         {
             // Arrange
-            var pipeline = ChunkingPipeline.Builder.Initialize()
+            var pipeline = ChunkingPipeline.CreateBuilder()
                 .UseTokenizer(_microsoftMLTokenizer)
                 .UseSplitter(s => s
                     .WithFixedSizeChunking()
@@ -166,7 +166,7 @@ namespace FluentChunker.Tests
                 .Build();
 
             // Act
-            var chunks = pipeline.Execute(InputText, meta => meta.Set("Url", "https://carloslopez.tech/doc-1"));
+            var chunks = pipeline.Chunk(InputText, meta => meta.Set("Url", "https://carloslopez.tech/doc-1"));
 
             // Assert
             using (Assert.EnterMultipleScope())
@@ -177,10 +177,10 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Execute_DocumentMetadata_OverridesPipelineMetadataOnKeyCollision()
+        public void Chunk_DocumentMetadata_OverridesPipelineMetadataOnKeyCollision()
         {
             // Arrange
-            var pipeline = ChunkingPipeline.Builder.Initialize()
+            var pipeline = ChunkingPipeline.CreateBuilder()
                 .UseTokenizer(_microsoftMLTokenizer)
                 .UseSplitter(s => s
                     .WithFixedSizeChunking()
@@ -189,17 +189,17 @@ namespace FluentChunker.Tests
                 .Build();
 
             // Act
-            var chunks = pipeline.Execute(InputText, meta => meta.Set("Language", "de"));
+            var chunks = pipeline.Chunk(InputText, meta => meta.Set("Language", "de"));
 
             // Assert
             Assert.That(chunks[0].Metadata["Language"].GetString(), Is.EqualTo("de"));
         }
 
         [Test]
-        public void Execute_ReusedPipelineWithDifferentDocumentMetadata_DoesNotLeakBetweenCalls()
+        public void Chunk_ReusedPipelineWithDifferentDocumentMetadata_DoesNotLeakBetweenCalls()
         {
             // Arrange
-            var pipeline = ChunkingPipeline.Builder.Initialize()
+            var pipeline = ChunkingPipeline.CreateBuilder()
                 .UseTokenizer(_microsoftMLTokenizer)
                 .UseSplitter(s => s
                     .WithFixedSizeChunking()
@@ -207,9 +207,9 @@ namespace FluentChunker.Tests
                 .Build();
 
             // Act
-            var chunksDoc1 = pipeline.Execute(InputText, meta => meta.Set("Url", "https://carloslopez.tech/doc-1"));
-            var chunksDoc2 = pipeline.Execute(InputText, meta => meta.Set("Url", "https://carloslopez.tech/doc-2"));
-            var chunksDoc3 = pipeline.Execute(InputText);
+            var chunksDoc1 = pipeline.Chunk(InputText, meta => meta.Set("Url", "https://carloslopez.tech/doc-1"));
+            var chunksDoc2 = pipeline.Chunk(InputText, meta => meta.Set("Url", "https://carloslopez.tech/doc-2"));
+            var chunksDoc3 = pipeline.Chunk(InputText);
 
             // Assert
             using (Assert.EnterMultipleScope())

@@ -16,7 +16,7 @@ namespace FluentChunker.Samples.Demo
             var microsoftMLTokenizer = new MicrosoftMLTokenizerAdapter(EncodingName);
 
             // Example 1: Create Pipeline by using Fixed-Size Chunking.
-            var pipeline1 = ChunkingPipeline.Builder.Initialize()
+            var pipeline1 = ChunkingPipeline.CreateBuilder()
                 .UseTokenizer(microsoftMLTokenizer)
                 .UseSplitter(s => s
                     .WithFixedSizeChunking()
@@ -25,7 +25,7 @@ namespace FluentChunker.Samples.Demo
                 .AddMetadata(meta => meta.Set("SourceType", "sample-files"))
                 .Build();
 
-            var chunks1 = pipeline1.Execute(content, meta =>
+            var chunks1 = pipeline1.Chunk(content, meta =>
             {
                 meta.Set("Source", "testfile.txt");
                 meta.Set("Title", "Demo Test File");
@@ -37,7 +37,7 @@ namespace FluentChunker.Samples.Demo
 
 
             // Example 2: Create Pipeline by using Sentence-Aware Chunking.
-            var pipeline2 = ChunkingPipeline.Builder.Initialize()
+            var pipeline2 = ChunkingPipeline.CreateBuilder()
                 .UseTokenizer(microsoftMLTokenizer)
                 .UseSplitter(s => s
                     .WithSentenceAwareChunking()
@@ -46,7 +46,7 @@ namespace FluentChunker.Samples.Demo
                 .AddMetadata(meta => meta.Set("SourceType", "sample-files"))
                 .Build();
 
-            var chunks2 = pipeline2.Execute(content, meta =>
+            var chunks2 = pipeline2.Chunk(content, meta =>
             {
                 meta.Set("Source", "testfile.txt");
                 meta.Set("Title", "Demo Test File");
@@ -61,7 +61,7 @@ namespace FluentChunker.Samples.Demo
             // "Fig.", "No." and "approx." are not in the built-in EN/DE/FR/ES set,
             // so without AddAbbreviations the splitter would falsely end a sentence after each of them.
             // Trailing dots are optional and matching is case-insensitive.
-            var pipeline3 = ChunkingPipeline.Builder.Initialize()
+            var pipeline3 = ChunkingPipeline.CreateBuilder()
                 .UseTokenizer(microsoftMLTokenizer)
                 .UseSplitter(s => s
                     .WithSentenceAwareChunking()
@@ -76,7 +76,7 @@ namespace FluentChunker.Samples.Demo
                 "Order No. 1234 took approx. three weeks to arrive. " +
                 "A follow-up shipment is expected next month.";
 
-            var chunks3 = pipeline3.Execute(abbreviationText, meta =>
+            var chunks3 = pipeline3.Chunk(abbreviationText, meta =>
             {
                 meta.Set("Source", "inline");
                 meta.Set("CreatedAt", DateTime.UtcNow);
@@ -90,7 +90,7 @@ namespace FluentChunker.Samples.Demo
             // Splits along paragraphs -> lines -> sentences -> token windows,
             // descending only for pieces that exceed the budget,
             // chunks never merge across a structural seam and overlap resets to zero there.
-            var pipeline4 = ChunkingPipeline.Builder.Initialize()
+            var pipeline4 = ChunkingPipeline.CreateBuilder()
                 .UseTokenizer(microsoftMLTokenizer)
                 .UseSplitter(s => s
                     .WithRecursiveChunking()
@@ -99,7 +99,7 @@ namespace FluentChunker.Samples.Demo
                 .AddMetadata(meta => meta.Set("SourceType", "sample-files"))
                 .Build();
 
-            var chunks4 = pipeline4.Execute(content, meta =>
+            var chunks4 = pipeline4.Chunk(content, meta =>
             {
                 meta.Set("Source", "testfile.txt");
                 meta.Set("Title", "Demo Test File");
@@ -116,7 +116,7 @@ namespace FluentChunker.Samples.Demo
             // while the following paragraph alone blows the budget,
             // so the chunker descends paragraph -> lines -> sentences and packs whole sentences up to the budget (each sentence exceeds the 10-token overlap,
             // so no whole sentence is carried and OverlapCount stays 0).
-            var pipeline5 = ChunkingPipeline.Builder.Initialize()
+            var pipeline5 = ChunkingPipeline.CreateBuilder()
                 .UseTokenizer(microsoftMLTokenizer)
                 .UseSplitter(s => s
                     .WithRecursiveChunking()
@@ -132,7 +132,7 @@ namespace FluentChunker.Samples.Demo
                 "Several researchers compared retrieval results generated from synthetic benchmark " +
                 "documents against outputs produced from real company reports and customer support transcripts.";
 
-            var chunks5 = pipeline5.Execute(descentText, meta => meta.Set("Source", "inline"));
+            var chunks5 = pipeline5.Chunk(descentText, meta => meta.Set("Source", "inline"));
 
             Console.WriteLine(">>> Example 5: Recursive Chunking (descent into an oversized paragraph) <<<\n");
             PrintChunks(chunks5);
@@ -145,7 +145,7 @@ namespace FluentChunker.Samples.Demo
             // This strategy has no overlap by design.
             var markdownContent = File.ReadAllText(SampleFile("testfile.md"));
 
-            var pipeline6 = ChunkingPipeline.Builder.Initialize()
+            var pipeline6 = ChunkingPipeline.CreateBuilder()
                 .UseTokenizer(microsoftMLTokenizer)
                 .UseSplitter(s => s
                     .WithStructureAwareChunking()
@@ -153,7 +153,7 @@ namespace FluentChunker.Samples.Demo
                 .AddMetadata(meta => meta.Set("SourceType", "sample-files"))
                 .Build();
 
-            var chunks6 = pipeline6.Execute(markdownContent, meta =>
+            var chunks6 = pipeline6.Chunk(markdownContent, meta =>
             {
                 meta.Set("Source", "testfile.md");
                 meta.Set("Title", "Demo Test File (Markdown)");
@@ -163,14 +163,12 @@ namespace FluentChunker.Samples.Demo
             Console.WriteLine(">>> Example 6: Structure-Aware Chunking (Markdown sections) <<<\n");
             PrintChunks(chunks6);
 
-            // Keeps the window open when launched from a file explorer, but ReadKey throws whenever input is redirected, so skip it when piped or run in CI
             if (!Console.IsInputRedirected)
             {
                 Console.ReadKey();
             }
         }
 
-        // Path.Combine keeps the separator correct off Windows, and the folder name matches the on-disk casing, which matters on case-sensitive filesystems
         private static string SampleFile(string fileName) =>
             Path.Combine(AppContext.BaseDirectory, "testfiles", fileName);
 

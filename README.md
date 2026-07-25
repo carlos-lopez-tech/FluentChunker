@@ -13,7 +13,7 @@ Split text into meaningful chunks for RAG (Retrieval-Augmented Generation), embe
 - **Token-aware chunking**: Split text by token count with accurate token counting
 - **Customizable tokenizers**: Use the built-in Microsoft.ML.Tokenizers integration or plug in your own tokenizer implementation
 - **Overlap support**: Configure token overlap between chunks to preserve context; overlap is budgeted inside the max token size, so chunks never exceed it
-- **Two metadata scopes**: Attach pipeline-level metadata (constant per run) and document-level metadata (per `Execute` call) to each chunk
+- **Two metadata scopes**: Attach pipeline-level metadata (constant per run) and document-level metadata (per `Chunk` call) to each chunk
 - **Reusable pipelines**: Build once, execute against many documents; metadata never leaks between calls
 
 ## Quick Start
@@ -27,7 +27,7 @@ using FluentChunker.Tokenizers;
 // It is the encoding included with FluentChunker. See Tokenizers below for chat model encodings.
 var tokenizer = new MicrosoftMLTokenizerAdapter("cl100k_base");
 
-var pipeline = ChunkingPipeline.Builder.Initialize()
+var pipeline = ChunkingPipeline.CreateBuilder()
     .UseTokenizer(tokenizer)
     .UseSplitter(s => s
         .WithFixedSizeChunking()
@@ -40,8 +40,8 @@ var pipeline = ChunkingPipeline.Builder.Initialize()
     })
     .Build();
 
-// Execute and process chunks
-var chunks = pipeline.Execute(largeDocument);
+// Chunk the document and read the results
+var chunks = pipeline.Chunk(largeDocument);
 
 foreach (var chunk in chunks)
 {
@@ -64,14 +64,14 @@ dotnet add package FluentChunker
 ```csharp
 var tokenizer = new MicrosoftMLTokenizerAdapter("cl100k_base");
 
-var pipeline = ChunkingPipeline.Builder.Initialize()
+var pipeline = ChunkingPipeline.CreateBuilder()
     .UseTokenizer(tokenizer)
     .UseSplitter(s => s
         .WithFixedSizeChunking()
         .WithMaxTokenSize(1024))
     .Build();
 
-var chunks = pipeline.Execute(text);
+var chunks = pipeline.Chunk(text);
 ```
 
 ### Chunking with Overlap
@@ -79,7 +79,7 @@ var chunks = pipeline.Execute(text);
 ```csharp
 var tokenizer = new MicrosoftMLTokenizerAdapter("cl100k_base");
 
-var pipeline = ChunkingPipeline.Builder.Initialize()
+var pipeline = ChunkingPipeline.CreateBuilder()
     .UseTokenizer(tokenizer)
     .UseSplitter(s => s
         .WithFixedSizeChunking()
@@ -87,7 +87,7 @@ var pipeline = ChunkingPipeline.Builder.Initialize()
         .WithOverlap(128))
     .Build();
 
-var chunks = pipeline.Execute(text);
+var chunks = pipeline.Chunk(text);
 ```
 
 ### Sentence-Aware Chunking
@@ -95,7 +95,7 @@ var chunks = pipeline.Execute(text);
 ```csharp
 var tokenizer = new MicrosoftMLTokenizerAdapter("cl100k_base");
 
-var pipeline = ChunkingPipeline.Builder.Initialize()
+var pipeline = ChunkingPipeline.CreateBuilder()
     .UseTokenizer(tokenizer)
     .UseSplitter(s => s
         .WithSentenceAwareChunking()
@@ -104,7 +104,7 @@ var pipeline = ChunkingPipeline.Builder.Initialize()
         .AddAbbreviations("Vgl.", "sog."))   // optional, additive to the built-in list
     .Build();
 
-var chunks = pipeline.Execute(document);
+var chunks = pipeline.Chunk(document);
 ```
 
 Chunks contain whole sentences and are verbatim slices of the source text: whitespace and paragraph breaks between packed sentences are preserved exactly, not re-joined or trimmed. Every chunk's `TokenCount` stays within the configured max: a sentence that alone exceeds the budget is split into evenly-sized token windows as a fallback (with `OverlapCount = 0` on those windows). Note that fallback windows are *decoded from tokens*, not verbatim slices, so their text can carry a leading space from the tokenizer; trim before joining chunk texts if that matters to you.
@@ -120,7 +120,7 @@ Chunks contain whole sentences and are verbatim slices of the source text: white
 ```csharp
 var tokenizer = new MicrosoftMLTokenizerAdapter("cl100k_base");
 
-var pipeline = ChunkingPipeline.Builder.Initialize()
+var pipeline = ChunkingPipeline.CreateBuilder()
     .UseTokenizer(tokenizer)
     .UseSplitter(s => s
         .WithRecursiveChunking()
@@ -129,7 +129,7 @@ var pipeline = ChunkingPipeline.Builder.Initialize()
         .AddAbbreviations("Vgl.", "sog."))   // optional, feeds the sentence tier
     .Build();
 
-var chunks = pipeline.Execute(document);
+var chunks = pipeline.Chunk(document);
 ```
 
 The document is split along a fixed hierarchy of structural separators: **paragraphs** (blank-line separated), then **lines**, then **sentences** (using the same abbreviation-aware detection as sentence-aware chunking), then **balanced token windows** as a last resort. Only a unit that *alone* exceeds the max token size descends to the next level; adjacent small units are packed together up to the budget. Chunks never merge across a descent boundary: a small paragraph before or after an oversized one always stays in its own chunk, so every chunk respects the largest structural boundary possible.
@@ -143,7 +143,7 @@ Chunks are verbatim slices of the source (interior line breaks preserved); only 
 ```csharp
 var tokenizer = new MicrosoftMLTokenizerAdapter("cl100k_base");
 
-var pipeline = ChunkingPipeline.Builder.Initialize()
+var pipeline = ChunkingPipeline.CreateBuilder()
     .UseTokenizer(tokenizer)
     .UseSplitter(s => s
         .WithStructureAwareChunking()
@@ -151,7 +151,7 @@ var pipeline = ChunkingPipeline.Builder.Initialize()
         .AddAbbreviations("Vgl.", "sog."))   // optional, feeds the sentence descent
     .Build();
 
-var chunks = pipeline.Execute(markdownDocument);
+var chunks = pipeline.Chunk(markdownDocument);
 
 foreach (var chunk in chunks)
 {
@@ -170,7 +170,7 @@ Designed for Markdown content: every heading (ATX `#`..`######` or Setext underl
 ```csharp
 var tokenizer = new MicrosoftMLTokenizerAdapter("cl100k_base");
 
-var pipeline = ChunkingPipeline.Builder.Initialize()
+var pipeline = ChunkingPipeline.CreateBuilder()
     .UseTokenizer(tokenizer)
     .UseSplitter(s => s
         .WithFixedSizeChunking()
@@ -182,7 +182,7 @@ var pipeline = ChunkingPipeline.Builder.Initialize()
     })
     .Build();
 
-var chunks = pipeline.Execute(largeDocument);
+var chunks = pipeline.Chunk(largeDocument);
 
 foreach (var chunk in chunks)
 {
@@ -194,12 +194,12 @@ foreach (var chunk in chunks)
 
 ### Per-Document Metadata (Reusing One Pipeline)
 
-Pipeline-level metadata (`AddMetadata`) is constant for the whole run; document-level metadata is passed per `Execute` call. On key collision, the document value wins.
+Pipeline-level metadata (`AddMetadata`) is constant for the whole run; document-level metadata is passed per `Chunk` call. On key collision, the document value wins.
 
 ```csharp
 var tokenizer = new MicrosoftMLTokenizerAdapter("cl100k_base");
 
-var pipeline = ChunkingPipeline.Builder.Initialize()
+var pipeline = ChunkingPipeline.CreateBuilder()
     .UseTokenizer(tokenizer)
     .UseSplitter(s => s
         .WithFixedSizeChunking()
@@ -210,7 +210,7 @@ var pipeline = ChunkingPipeline.Builder.Initialize()
 
 foreach (var doc in documents)
 {
-    var chunks = pipeline.Execute(doc.Markdown, meta =>     // per document
+    var chunks = pipeline.Chunk(doc.Markdown, meta =>     // per document
     {
         meta.Set("Url", doc.Url);
         meta.Set("Title", doc.Title);
@@ -227,7 +227,7 @@ FluentChunker includes built-in support for [Microsoft.ML.Tokenizers](https://ww
 
 ```csharp
 var tokenizer = new MicrosoftMLTokenizerAdapter("cl100k_base"); // ships with FluentChunker
-var pipeline = ChunkingPipeline.Builder.Initialize()
+var pipeline = ChunkingPipeline.CreateBuilder()
     .UseTokenizer(tokenizer)
     .UseSplitter(s => s
         .WithFixedSizeChunking()
@@ -279,7 +279,7 @@ public class CustomTokenizer : ITokenizer
 }
 
 var tokenizer = new CustomTokenizer();
-var pipeline = ChunkingPipeline.Builder.Initialize()
+var pipeline = ChunkingPipeline.CreateBuilder()
     .UseTokenizer(tokenizer)
     .UseSplitter(s => s
         .WithFixedSizeChunking()
@@ -291,11 +291,11 @@ All three methods (`Encode`, `Decode`, `CountTokens`) are required by the `IToke
 
 ## API Reference
 
-### ChunkingPipeline.Builder
+### Building a pipeline
 
 The builder is stepped: each method returns the next step, so the order below is enforced at compile time:
 
-- `Builder.Initialize()`: Start a new pipeline configuration
+- `ChunkingPipeline.CreateBuilder()`: Start a new pipeline configuration
 - `.UseTokenizer(ITokenizer tokenizer)`: Set the tokenizer for token counting
 - `.UseSplitter(Action<Splitter.Builder> configure)`: Configure the chunking strategy
 - `.AddMetadata(Action<MetadataBuilder> configure)` (optional): add pipeline-level metadata to all chunks (may be called multiple times; callbacks compose)
@@ -315,13 +315,13 @@ Also stepped, in this order:
 
 ### ChunkingPipeline
 
-- `.Execute(string document)`: Execute the pipeline and return chunks
-- `.Execute(string document, Action<MetadataBuilder> configureMetadata)`: Execute with additional document-level metadata; merged over the pipeline metadata, document values win on key collision
+- `.Chunk(string document)`: Run the pipeline and return chunks
+- `.Chunk(string document, Action<MetadataBuilder> configureMetadata)`: Run with additional document-level metadata; merged over the pipeline metadata, document values win on key collision
 
 ### Chunk
 
 Each chunk contains:
-- `Index`: Zero-based position in the chunk sequence (resets per `Execute` call)
+- `Index`: Zero-based position in the chunk sequence (resets per `Chunk` call)
 - `Text`: The actual chunk content
 - `TokenCount`: Number of tokens in this chunk
 - `OverlapCount`: Tokens carried into this chunk from the previous chunk (`0` on the first chunk)

@@ -13,7 +13,7 @@ First public release.
 
 ### Added
 
-- **Fluent pipeline builder.** `ChunkingPipeline.Builder.Initialize()` walks through the required
+- **Fluent pipeline builder.** `ChunkingPipeline.CreateBuilder()` walks through the required
   steps in order (tokenizer, then splitter, then optional metadata), so invalid configurations are
   not expressible.
 - **Fixed-size chunking.** Splits into fixed token windows, ignoring sentence boundaries.
@@ -32,7 +32,7 @@ First public release.
   the next. Overlap is budgeted inside the max token size, so chunks never exceed it, and each
   chunk's `OverlapCount` reports the tokens it received.
 - **Two metadata scopes.** Pipeline-level metadata (`AddMetadata`, constant for every run) and
-  document-level metadata (the `Execute` overload, per call). Document values win on key collisions
+  document-level metadata (the `Chunk` overload, per call). Document values win on key collisions
   and never leak into later calls.
 - **Tokenizer abstraction.** `ITokenizer` is the extension point for custom tokenization;
   `MicrosoftMLTokenizerAdapter` provides accurate OpenAI-compatible counting via

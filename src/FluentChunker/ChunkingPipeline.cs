@@ -7,7 +7,7 @@ namespace FluentChunker
 {
     /// <summary>
     /// An immutable, reusable chunking configuration.
-    /// Build one with <see cref="Builder"/>, then run it against as many documents as needed.
+    /// Build one with <see cref="CreateBuilder"/>, then run it against as many documents as needed.
     /// </summary>
     public record ChunkingPipeline
     {
@@ -21,12 +21,20 @@ namespace FluentChunker
         }
 
         /// <summary>
+        /// Starts building a pipeline.
+        /// The returned step interfaces expose only the calls valid at each stage, in order: tokenizer, then splitter, then optional metadata.
+        /// A builder can be built more than once, and each result is independent.
+        /// </summary>
+        /// <returns>The first step, which requires a tokenizer.</returns>
+        public static ITokenizerStep CreateBuilder() => new Builder();
+
+        /// <summary>
         /// Splits a document, stamping every chunk with the pipeline-level metadata.
         /// </summary>
         /// <param name="document">The document to split.</param>
         /// <returns>The chunks, in document order.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="document"/> is null.</exception>
-        public IReadOnlyList<Chunk> Execute(string document) => Execute(document, null);
+        public IReadOnlyList<Chunk> Chunk(string document) => Chunk(document, null);
 
         /// <summary>
         /// Splits a document, adding metadata that applies only to this call.
@@ -36,7 +44,7 @@ namespace FluentChunker
         /// <param name="configureMetadata">Populates the document-level metadata, or null for none.</param>
         /// <returns>The chunks, in document order.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="document"/> is null.</exception>
-        public IReadOnlyList<Chunk> Execute(string document, Action<MetadataBuilder>? configureMetadata)
+        public IReadOnlyList<Chunk> Chunk(string document, Action<MetadataBuilder>? configureMetadata)
         {
             ArgumentNullException.ThrowIfNull(document);
 
@@ -76,28 +84,11 @@ namespace FluentChunker
             return merged;
         }
 
-        /// <summary>
-        /// Builds a <see cref="ChunkingPipeline"/>.
-        /// Start with <see cref="Initialize"/>; the returned step interfaces expose only the calls that are valid at each stage.
-        /// A builder can be built more than once, and each result is independent.
-        /// </summary>
-        public class Builder : ITokenizerStep, ISplitterStep, IOptionalStep
+        private sealed class Builder : ITokenizerStep, ISplitterStep, IOptionalStep
         {
             private ITokenizer? _tokenizer;
             private IChunker? _chunker;
             private Action<MetadataBuilder>? _metadata;
-
-            private Builder()
-            {
-
-            }
-
-            /// <summary>
-            /// Starts building a <see cref="ChunkingPipeline"/>.
-            /// The builder guides you through the required steps in order: tokenizer, then splitter, then optional metadata.
-            /// </summary>
-            /// <returns>The first step, which requires a tokenizer.</returns>
-            public static ITokenizerStep Initialize() => new Builder();
 
             /// <inheritdoc/>
             public ISplitterStep UseTokenizer(ITokenizer tokenizer)
@@ -147,7 +138,7 @@ namespace FluentChunker
 
     /// <summary>
     /// Builder stage requiring a tokenizer.
-    /// Hidden from IntelliSense: reach it through <see cref="ChunkingPipeline.Builder.Initialize"/> rather than naming it.
+    /// Hidden from IntelliSense: reach it through <see cref="ChunkingPipeline.CreateBuilder"/> rather than naming it.
     /// </summary>
     [EditorBrowsable(EditorBrowsableState.Never)]
     public interface ITokenizerStep
@@ -196,7 +187,7 @@ namespace FluentChunker
 
         /// <summary>
         /// Creates the immutable <see cref="ChunkingPipeline"/> from the configured steps.
-        /// The pipeline can be reused across documents via <see cref="ChunkingPipeline.Execute(string)"/>.
+        /// The pipeline can be reused across documents via <see cref="ChunkingPipeline.Chunk(string)"/>.
         /// </summary>
         ChunkingPipeline Build();
     }
