@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.0.1] - 2026-07-26
+## [1.0.2] - 2026-07-26
 
 ### Fixed
 
@@ -82,6 +82,6 @@ First public release.
 - Size chunks with the encoding of the model that consumes them. The same text can differ by roughly
   10% between encodings, so the wrong one silently misreports the budget.
 
-[Unreleased]: https://github.com/carlos-lopez-tech/FluentChunker/compare/v1.0.1...HEAD
-[1.0.1]: https://github.com/carlos-lopez-tech/FluentChunker/compare/v1.0.0...v1.0.1
+[Unreleased]: https://github.com/carlos-lopez-tech/FluentChunker/compare/v1.0.2...HEAD
+[1.0.2]: https://github.com/carlos-lopez-tech/FluentChunker/compare/v1.0.0...v1.0.2
 [1.0.0]: https://github.com/carlos-lopez-tech/FluentChunker/releases/tag/v1.0.0
