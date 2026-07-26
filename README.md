@@ -1,7 +1,14 @@
 # FluentChunker
 
+[![NuGet](https://img.shields.io/nuget/v/FluentChunker.svg)](https://www.nuget.org/packages/FluentChunker)
+[![Downloads](https://img.shields.io/nuget/dt/FluentChunker.svg)](https://www.nuget.org/packages/FluentChunker)
+[![CI](https://github.com/carlos-lopez-tech/FluentChunker/actions/workflows/ci.yml/badge.svg)](https://github.com/carlos-lopez-tech/FluentChunker/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/github/license/carlos-lopez-tech/FluentChunker)](LICENSE.txt)
+
 Production-ready fluent document chunking for .NET.
 Build composable document chunking pipelines for RAG, embeddings, semantic search, vector databases, and AI applications with an intuitive fluent, step-by-step builder API.
+
+[Features](#features) • [Quick Start](#quick-start) • [Installation](#installation) • [Usage Examples](#usage-examples) • [Tokenizers](#tokenizers) • [API Reference](#api-reference) • [Development](#development) • [License](#license)
 
 ## Features
 
