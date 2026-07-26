@@ -32,7 +32,16 @@ jobs:
         run: dotnet build FluentChunker.slnx --no-restore -c Release -warnaserror
 
       - name: Test
-        run: dotnet test tests/FluentChunker.Tests --no-build -c Release
+        run: dotnet test tests/FluentChunker.Tests --no-build -c Release --collect:"XPlat Code Coverage" --results-directory ./coverage
+
+      # Uploading from the same job keeps the report tied to the commit that produced it.
+      # Coveralls identifies a public repository from the default job token, so no account secret is involved.
+      - name: Publish coverage to Coveralls
+        uses: coverallsapp/github-action@v2
+        with:
+          # One report per target framework, merged so a line counts as covered when either run reaches it
+          files: ./coverage/**/coverage.cobertura.xml
+          format: cobertura
 
       - name: Pack
         run: dotnet pack src/FluentChunker/FluentChunker.csproj --no-build -c Release -o ./artifacts
