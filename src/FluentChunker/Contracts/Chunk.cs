@@ -30,6 +30,23 @@ namespace FluentChunker.Contracts
         public int OverlapCount { get; init; }
 
         /// <summary>
+        /// Index in the source document where <see cref="Text"/> begins, or -1 when the chunker does not track it.
+        /// </summary>
+        /// <remarks>
+        /// Every built-in strategy reports a real value, and <c>document.Substring(SourceStart, SourceLength)</c> returns <see cref="Text"/> exactly.
+        /// With overlap configured, consecutive chunks deliberately cover overlapping ranges.
+        /// </remarks>
+        public int SourceStart { get; init; } = -1;
+
+        /// <summary>
+        /// Length of <see cref="Text"/> in the source document, or -1 when the chunker does not track it.
+        /// </summary>
+        /// <remarks>
+        /// Always equal to <c>Text.Length</c> for the built-in strategies, since every chunk they produce is a verbatim slice of the document.
+        /// </remarks>
+        public int SourceLength { get; init; } = -1;
+
+        /// <summary>
         /// Pipeline-level and document-level metadata, merged, with document values winning.
         /// Structure-aware chunking reserves the key <c>headingPath</c> for its heading breadcrumb.
         /// </summary>
