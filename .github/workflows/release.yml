@@ -28,7 +28,29 @@ jobs:
       # The tag is the single source of version truth, so v1.2.3 ships as 1.2.3
       - name: Derive version from tag
         id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          # Rejecting the tag here turns a malformed name into a named cause, rather than an opaque NETSDK1018 minutes into the build
+          if ! printf '%s' "$version" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$'; then
+            echo "::error::Tag '$GITHUB_REF_NAME' yields version '$version', which is not valid SemVer. Expected vMAJOR.MINOR.PATCH with an optional -prerelease suffix."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      # Pulls just this version's section, stopping at the next heading and dropping the
+      # link definitions that live at the end of the file.
+      # Sits ahead of the publish steps because a NuGet version can never be withdrawn and reused, so a missing section has to abort while that is still free.
+      - name: Extract changelog entry
+        run: |
+          awk -v v="${{ steps.version.outputs.version }}" '
+            /^## / { if (found) exit; if (index($0, "[" v "]") || index($0, "## " v)) found = 1; next }
+            found && /^\[[^]]+\]: / { next }
+            found { print }
+          ' CHANGELOG.md > release-notes.md
+          if ! grep -q '[^[:space:]]' release-notes.md; then
+            echo "::error::CHANGELOG.md has no entry for ${{ steps.version.outputs.version }}. Add a '## [${{ steps.version.outputs.version }}]' section before tagging."
+            exit 1
+          fi
 
       - name: Restore
         run: dotnet restore FluentChunker.slnx
@@ -59,36 +81,21 @@ jobs:
           --source https://api.nuget.org/v3/index.json
           --skip-duplicate
 
-      # Pulls just this version's section, stopping at the next heading and dropping the
-      # link definitions that live at the end of the file
-      - name: Extract changelog entry
-        id: notes
-        run: |
-          awk -v v="${{ steps.version.outputs.version }}" '
-            /^## / { if (found) exit; if (index($0, "[" v "]") || index($0, "## " v)) found = 1; next }
-            found && /^\[[^]]+\]: / { next }
-            found { print }
-          ' CHANGELOG.md > release-notes.md
-          if [ -s release-notes.md ]; then
-            echo "have_notes=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "have_notes=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Create GitHub Release
+      # Converges on the intended release whether or not one already exists, so a re-run or a release pre-created in the web UI is no longer a dead end
+      - name: Create or update GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # A hyphen is SemVer's prerelease marker, so v1.0.0-preview.1 must not
-          # take over as the repository's latest release
+          # A hyphen is SemVer's prerelease marker, so v1.0.0-preview.1 must not take over as the repository's latest release
           case "${{ steps.version.outputs.version }}" in
-            *-*) prerelease=--prerelease ;;
-            *)   prerelease= ;;
+            *-*) prerelease=true ;;
+            *)   prerelease=false ;;
           esac
-          if [ "${{ steps.notes.outputs.have_notes }}" = "true" ]; then
-            gh release create "$GITHUB_REF_NAME" ./artifacts/*.nupkg ./artifacts/*.snupkg \
-              --title "$GITHUB_REF_NAME" --notes-file release-notes.md $prerelease
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release edit "$GITHUB_REF_NAME" \
+              --title "$GITHUB_REF_NAME" --notes-file release-notes.md --prerelease=$prerelease
+            gh release upload "$GITHUB_REF_NAME" ./artifacts/*.nupkg ./artifacts/*.snupkg --clobber
           else
             gh release create "$GITHUB_REF_NAME" ./artifacts/*.nupkg ./artifacts/*.snupkg \
-              --title "$GITHUB_REF_NAME" --generate-notes $prerelease
+              --title "$GITHUB_REF_NAME" --notes-file release-notes.md --prerelease=$prerelease
           fi
