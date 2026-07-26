@@ -36,7 +36,7 @@ The engineers captured the exact pipeline configuration before starting the eval
 
 ```text
 strategy: structure-aware
-tokenizer: o200k_base
+tokenizer: cl100k_base
 maxTokens: 120
 
 corpus: archive-notes

@@ -115,5 +115,45 @@ namespace FluentChunker.Tests
             // Assert
             Assert.That(result, Is.Empty);
         }
+
+        [Test]
+        public void Chunk_EmojiDocumentExceedingMaxTokens_ProducesNoReplacementCharacters()
+        {
+            // Arrange
+            var document = string.Concat(Enumerable.Repeat("Hello 👨‍👩‍👧‍👦 family emoji test. ", 40));
+            var chunker = new FixedSizeChunker(_microsoftMLTokenizer, maxTokens: 20, overlap: 0);
+
+            // Act
+            var result = chunker.Chunk(document);
+
+            // Assert
+            Assert.That(result, Has.Count.GreaterThan(1));
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(result.Where(c => c.Text.Contains('�')), Is.Empty);
+                Assert.That(string.Concat(result.Select(c => c.Text)), Is.EqualTo(document));
+            }
+        }
+
+        [Test]
+        public void Chunk_EmojiDocumentWithOverlap_KeepsEveryChunkWithinBudget()
+        {
+            // Arrange
+            var document = string.Concat(Enumerable.Repeat("Hello 👨‍👩‍👧‍👦 family emoji test. ", 40));
+            var chunker = new FixedSizeChunker(_microsoftMLTokenizer, maxTokens: 20, overlap: 5);
+
+            // Act
+            var result = chunker.Chunk(document);
+
+            // Assert
+            Assert.That(result, Has.Count.GreaterThan(1));
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(result.Select(c => c.TokenCount), Has.All.LessThanOrEqualTo(20));
+                Assert.That(result.Where(c => c.Text.Contains('�')), Is.Empty);
+                Assert.That(result.Select(c => _microsoftMLTokenizer.CountTokens(c.Text)),
+                    Is.EqualTo(result.Select(c => c.TokenCount)));
+            }
+        }
     }
 }

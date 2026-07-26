@@ -10,7 +10,7 @@ namespace FluentChunker.Samples.Demo
             var content = File.ReadAllText(SampleFile("testfile.txt"));
 
             // The encoding FluentChunker ships, used by the OpenAI embedding models.
-            // Chunks feeding a chat model want o200k_base, which needs its own Microsoft.ML.Tokenizers.Data package.
+            // Any other encoding needs its own Microsoft.ML.Tokenizers.Data package referenced first.
             const string EncodingName = "cl100k_base";
 
             var microsoftMLTokenizer = new MicrosoftMLTokenizerAdapter(EncodingName);

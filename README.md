@@ -1,7 +1,7 @@
 # FluentChunker
 
-A .NET library for building fluent, composable text chunking pipelines. 
-Split text into meaningful chunks for RAG (Retrieval-Augmented Generation), embeddings, search indexing, and other NLP workflows with a clean, readable API.
+Production-ready fluent document chunking for .NET.
+Build composable document chunking pipelines for RAG, embeddings, semantic search, vector databases, and AI applications with an intuitive fluent, step-by-step builder API.
 
 ## Features
 
@@ -12,7 +12,7 @@ Split text into meaningful chunks for RAG (Retrieval-Augmented Generation), embe
 - **Structure-aware chunking (Markdown)**: Split Markdown documents at heading boundaries with a `headingPath` breadcrumb stamped into each chunk's metadata; code fences, tables and lists stay atomic; no overlap by design
 - **Token-aware chunking**: Split text by token count with accurate token counting
 - **Customizable tokenizers**: Use the built-in Microsoft.ML.Tokenizers integration or plug in your own tokenizer implementation
-- **Overlap support**: Configure token overlap between chunks to preserve context; overlap is budgeted inside the max token size, so chunks never exceed it
+- **Overlap support**: Configure token overlap between chunks to preserve context; overlap is budgeted inside the max token size, so no chunk ever exceeds it
 - **Two metadata scopes**: Attach pipeline-level metadata (constant per run) and document-level metadata (per `Chunk` call) to each chunk
 - **Reusable pipelines**: Build once, execute against many documents; metadata never leaks between calls
 
@@ -22,7 +22,7 @@ Split text into meaningful chunks for RAG (Retrieval-Augmented Generation), embe
 using FluentChunker;
 using FluentChunker.Tokenizers;
 
-// Create tokenizer and fluent pipeline
+// Create tokenizer and fluent, step-by-step builder pipeline
 // cl100k_base is the encoding of the OpenAI embedding models, the usual target when indexing for RAG.
 // It is the encoding included with FluentChunker. See Tokenizers below for chat model encodings.
 var tokenizer = new MicrosoftMLTokenizerAdapter("cl100k_base");
@@ -36,7 +36,7 @@ var pipeline = ChunkingPipeline.CreateBuilder()
     .AddMetadata(meta =>
     {
         meta.Set("Source", "document.txt");
-        meta.Set("Model", "gpt-4o");
+        meta.Set("Model", "text-embedding-3-small");
     })
     .Build();
 
@@ -107,7 +107,7 @@ var pipeline = ChunkingPipeline.CreateBuilder()
 var chunks = pipeline.Chunk(document);
 ```
 
-Chunks contain whole sentences and are verbatim slices of the source text: whitespace and paragraph breaks between packed sentences are preserved exactly, not re-joined or trimmed. Every chunk's `TokenCount` stays within the configured max: a sentence that alone exceeds the budget is split into evenly-sized token windows as a fallback (with `OverlapCount = 0` on those windows). Note that fallback windows are *decoded from tokens*, not verbatim slices, so their text can carry a leading space from the tokenizer; trim before joining chunk texts if that matters to you.
+Chunks contain whole sentences and are verbatim slices of the source text: whitespace and paragraph breaks between packed sentences are preserved exactly, not re-joined or trimmed. Every chunk's `TokenCount` stays within the configured max at any max token size of 4 or above: a sentence that alone exceeds the budget is split into evenly-sized token windows as a fallback (with `OverlapCount = 0` on those windows). Fallback windows are *decoded from tokens* rather than sliced from the source, but every boundary lands on a cut that does not fall inside a character, so the windows reconstruct the sentence exactly. Do not trim them before joining.
 
 `WithOverlap(n)` carries whole trailing sentences into the next chunk, as many as fit within `n` tokens. `OverlapCount` reports the tokens carried *into* a chunk (0 on the first chunk), the same semantics both strategies use.
 
@@ -134,7 +134,7 @@ var chunks = pipeline.Chunk(document);
 
 The document is split along a fixed hierarchy of structural separators: **paragraphs** (blank-line separated), then **lines**, then **sentences** (using the same abbreviation-aware detection as sentence-aware chunking), then **balanced token windows** as a last resort. Only a unit that *alone* exceeds the max token size descends to the next level; adjacent small units are packed together up to the budget. Chunks never merge across a descent boundary: a small paragraph before or after an oversized one always stays in its own chunk, so every chunk respects the largest structural boundary possible.
 
-Chunks are verbatim slices of the source (interior line breaks preserved); only token-window fallback chunks are decoded from tokens and may carry a leading space, exactly like the sentence-aware fallback.
+Chunks are verbatim slices of the source (interior line breaks preserved); only token-window fallback chunks are decoded from tokens, and those reconstruct the unit exactly because every boundary lands on a cut that does not fall inside a character, exactly like the sentence-aware fallback.
 
 `WithOverlap(n)` carries whole trailing units (paragraphs, lines or sentences) into the next chunk, as many as fit within `n` tokens. Overlap applies *within* a packing run and **resets to zero at every structural seam** (before the first chunk inside an oversized unit, after the last one, and around token-window fallbacks), so carried context always comes from the same structural region. `OverlapCount` reports the tokens carried *into* a chunk (0 on the first chunk and wherever a seam resets it).
 
@@ -239,26 +239,16 @@ Need a different tokenizer? Implement `ITokenizer` and pass it to `UseTokenizer`
 
 #### Choosing an encoding
 
-**Pick the encoding of the model that consumes the chunks.** In a RAG pipeline that is usually two different models: you size chunks against the *embedding* model when indexing, and against the *chat* model when assembling a prompt from retrieved chunks. The counts are not interchangeable. The same text can differ by roughly 10% between encodings, in either direction, so chunking prose to 8,000 `o200k_base` tokens can land near 8,600 `cl100k_base` tokens and blow past the 8,191 token limit of `text-embedding-3-large`.
+**Pick the encoding of the model that consumes the chunks.** In a RAG pipeline that is usually two different models: you size chunks against the *embedding* model when indexing, and against the *chat* model when assembling a prompt from retrieved chunks. The counts are not interchangeable: the same text can differ by roughly 10% between encodings, in either direction, which is enough to push prose chunked to 8,000 tokens past the 8,191 token limit of `text-embedding-3-large`.
 
 | Encoding | Use it when your chunks feed | Included? |
 |---|---|---|
 | `cl100k_base` | Embedding models: `text-embedding-3-small`, `text-embedding-3-large`, `text-embedding-ada-002`. Also legacy chat: GPT-4, GPT-3.5 | **Yes** |
-| `o200k_base` | Chat and reasoning models: GPT-5, o1, o3, o4-mini, GPT-4.1, GPT-4.5, GPT-4o | No, add the package |
-| `p50k_base`, `r50k_base`, `gpt2` | Legacy GPT-3 and Codex models | No, add the package |
+| Every other encoding | Newer chat and reasoning models, and the legacy GPT-3 and Codex models | No, add the matching data package |
 
-Only `cl100k_base` ships with FluentChunker, because indexing documents for retrieval is the most common reason to reach for a chunker and that means sizing against an embedding model. Every example in this README uses it.
+`cl100k_base` is the encoding FluentChunker ships with, and every example in this README uses it. Indexing documents for retrieval is the most common reason to reach for a chunker, and that means sizing against an embedding model.
 
-Any other encoding needs its data package in your own project, otherwise the constructor throws an `InvalidOperationException` naming the package to add:
-
-```bash
-dotnet add package Microsoft.ML.Tokenizers.Data.O200kBase   # for o200k_base
-```
-
-```csharp
-// Budgeting retrieved chunks into a GPT-5 prompt, after adding the package above
-var chatTokenizer = new MicrosoftMLTokenizerAdapter("o200k_base");
-```
+Any other encoding needs its own `Microsoft.ML.Tokenizers.Data.*` package referenced in your project. Without it the constructor throws an `InvalidOperationException` that names the exact package to add, so the failure tells you how to fix it.
 
 ### Custom Tokenizers
 
@@ -309,7 +299,7 @@ Also stepped, in this order:
 - `.WithSentenceAwareChunking()`: Select the sentence-aware strategy (peer of `WithFixedSizeChunking`)
 - `.WithRecursiveChunking()`: Select the recursive strategy (paragraphs, then lines, then sentences, then token windows), descending only for oversized pieces (peer of the other two strategy methods)
 - `.WithStructureAwareChunking()`: Select the structure-aware Markdown strategy (peer of the other three strategy methods); its follow-up steps offer `WithMaxTokenSize` and `AddAbbreviations` but deliberately no `WithOverlap`
-- `.WithMaxTokenSize(int maxTokens)`: Maximum tokens per chunk (must be positive)
+- `.WithMaxTokenSize(int maxTokens)`: Maximum tokens per chunk (must be at least 4, the most tokens a single character can span, since a character is never split across chunks)
 - `.WithOverlap(int overlap)` (optional): tokens shared between consecutive chunks (must be non-negative and smaller than the max token size; budgeted inside it, not added on top)
 - `.AddAbbreviations(params string[] abbreviations)` (optional): additional abbreviations (beyond the built-in EN/DE/FR/ES set) that should not be treated as sentence endings; entries may include a trailing dot, matching is case-insensitive. May be called multiple times; entries accumulate rather than replace. Used by the strategies with a sentence tier (`WithSentenceAwareChunking()`, `WithRecursiveChunking()` and `WithStructureAwareChunking()`); has no effect when combined with `WithFixedSizeChunking()`.
 
@@ -323,7 +313,7 @@ Also stepped, in this order:
 Each chunk contains:
 - `Index`: Zero-based position in the chunk sequence (resets per `Chunk` call)
 - `Text`: The actual chunk content
-- `TokenCount`: Number of tokens in this chunk
+- `TokenCount`: Number of tokens in this chunk; never exceeds the max token size
 - `OverlapCount`: Tokens carried into this chunk from the previous chunk (`0` on the first chunk)
 - `Metadata`: Dictionary of custom key-value pairs as `JsonElement` (access with e.g. `chunk.Metadata["Source"].GetString()`)
 

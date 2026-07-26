@@ -68,6 +68,25 @@ namespace FluentChunker.Tests
         }
 
         [Test]
+        public void Chunk_SentenceCheaperWithItsPrecedingSpace_StaysWithinBudget()
+        {
+            // Arrange - " Demonstrated words follow after it." costs 7 tokens, but a chunk starting at that sentence drops the space and costs 8
+            const string text = "The opening sentence stands here. Demonstrated words follow after it.";
+            var chunker = new RecursiveChunker(_microsoftMLTokenizer, maxTokens: 7, overlap: 0);
+
+            // Act
+            var result = chunker.Chunk(text);
+
+            // Assert
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(result, Is.Not.Empty);
+                Assert.That(result.Select(c => _microsoftMLTokenizer.CountTokens(c.Text)),
+                    Has.All.LessThanOrEqualTo(7));
+            }
+        }
+
+        [Test]
         public void Chunk_TextWithinBudget_ReturnsSingleChunk()
         {
             // Arrange

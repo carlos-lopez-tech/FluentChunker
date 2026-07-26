@@ -11,7 +11,10 @@ namespace FluentChunker.Chunkers.Recursive
     /// a piece that exceeds that budget on its own is split into smaller pieces instead.
     /// A sentence that is still too big falls back to fixed token windows.
     /// </summary>
-    internal class RecursiveChunker(ITokenizer tokenizer, int maxTokens, int overlap,
+    internal class RecursiveChunker(
+        ITokenizer tokenizer, 
+        int maxTokens, 
+        int overlap,
         IReadOnlySet<string>? additionalAbbreviations = null) : IChunker
     {
         // The three structural levels the chunker splits on, from largest to smallest.
@@ -157,15 +160,15 @@ namespace FluentChunker.Chunkers.Recursive
         }
 
         // A single sentence over budget has no structural boundary left to split on, so cut it into token windows instead.
-        // The windows are sized as evenly as possible (rather than filling each to the max and leaving a tiny last one) and do not overlap.
-        // Unlike every other chunk, this text is rebuilt from tokens instead of sliced from the source,
-        // so it may gain a leading space that the tokenizer attaches to the first word.
+        // The windows are sized as evenly as possible rather than filling each to the max and leaving a tiny last one, and they do not overlap.
+        // Every boundary lands on a legal cut, so the windows concatenate back to the sentence exactly.
         private void EmitTokenWindows(string text, SentenceSpan sentence,
             List<Chunk> chunks, ref int index)
         {
             var tokens = _tokenizer.Encode(text.Substring(sentence.Start, sentence.Length));
+            var boundary = new TokenBoundary(_tokenizer, tokens);
 
-            foreach (var (start, length) in TokenWindows.Balanced(tokens.Count, _maxTokens))
+            foreach (var (start, length) in TokenWindows.Balanced(tokens.Count, _maxTokens, boundary))
             {
                 var window = TokenWindows.Slice(tokens, start, length);
 
@@ -179,18 +182,29 @@ namespace FluentChunker.Chunkers.Recursive
             }
         }
 
-        // Counts the tokens of each piece.
-        // From the second piece onward the count includes the whitespace between it and the previous piece,
-        // because a chunk is later sliced as one continuous span and that in-between whitespace ends up inside the slice.
-        // Counting it here keeps the packing decision honest about the chunk's real size.
+        // Counts the tokens of each piece, budgeting for the worse of the two positions it can occupy.
+        // A piece in the middle of a chunk is sliced together with the whitespace before it, but a piece that begins a chunk is sliced from its own start and loses that whitespace.
+        // Dropping a leading space can raise the count instead of lowering it, because BPE encodes a space-prefixed word more cheaply than a bare one, so only the larger of the two counts keeps a packed chunk inside the budget.
         private int[] CountUnitTokens(string text, IReadOnlyList<SentenceSpan> units)
         {
             var tokenCounts = new int[units.Count];
 
             for (var i = 0; i < units.Count; i++)
             {
-                var start = i == 0 ? units[i].Start : units[i - 1].End;
-                tokenCounts[i] = _tokenizer.CountTokens(text[start..units[i].End]);
+                var unit = units[i];
+                var asChunkStart = _tokenizer.CountTokens(text.Substring(unit.Start, unit.Length));
+
+                // The first piece has no preceding whitespace to lose, so it costs the same in either position.
+                if (i == 0)
+                {
+                    tokenCounts[i] = asChunkStart;
+                    continue;
+                }
+
+                var previousEnd = units[i - 1].End;
+                var insideChunk = _tokenizer.CountTokens(text.Substring(previousEnd, unit.End - previousEnd));
+
+                tokenCounts[i] = Math.Max(asChunkStart, insideChunk);
             }
 
             return tokenCounts;

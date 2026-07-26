@@ -1,3 +1,4 @@
+using FluentChunker.Chunkers;
 using FluentChunker.Chunkers.FixedSize;
 using FluentChunker.Chunkers.Recursive;
 using FluentChunker.Chunkers.SentenceAware;
@@ -88,7 +89,8 @@ namespace FluentChunker
 
             private void SetMaxTokenSize(int maxTokens)
             {
-                ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxTokens);
+                // A character is never split across chunks, so a budget smaller than the largest single character could not be honoured.
+                ArgumentOutOfRangeException.ThrowIfLessThan(maxTokens, TokenBoundary.MaxTokensPerCharacter);
                 _maxTokens = maxTokens;
             }
 
@@ -115,8 +117,7 @@ namespace FluentChunker
             }
 
             /// <summary>
-            /// Stage reached after choosing fixed-size, sentence-aware or recursive chunking,
-            /// where the max token size is still required.
+            /// Stage reached after choosing fixed-size, sentence-aware or recursive chunking, where the max token size is still required.
             /// </summary>
             public class ChunkingStrategyStep
             {
@@ -128,9 +129,10 @@ namespace FluentChunker
                 /// Sets the maximum number of tokens a single chunk may contain.
                 /// </summary>
                 /// <param name="maxTokens">The chunk size limit in tokens.
-                /// Must be positive.</param>
+                /// Must be at least 4, the most tokens a single character can span, since a character is never split across chunks.
+                /// No chunk ever exceeds this limit.</param>
                 /// <returns>The final step, where overlap and abbreviations can optionally be configured.</returns>
-                /// <exception cref="ArgumentOutOfRangeException"><paramref name="maxTokens"/> is zero or negative.</exception>
+                /// <exception cref="ArgumentOutOfRangeException"><paramref name="maxTokens"/> is less than 4.</exception>
                 public MaxTokenSizeStep WithMaxTokenSize(int maxTokens)
                 {
                     _builder.SetMaxTokenSize(maxTokens);
@@ -159,7 +161,7 @@ namespace FluentChunker
                 public MaxTokenSizeStep WithOverlap(int overlap)
                 {
                     ArgumentOutOfRangeException.ThrowIfNegative(overlap);
-                    // overlap == maxTokens would make FixedSizeChunker's step size zero, so it would loop forever
+                    // overlap == maxTokens would make every chunk entirely carried content, leaving nothing to advance through the document with
                     ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(overlap, _builder._maxTokens);
 
                     _builder._overlap = overlap;
@@ -196,10 +198,11 @@ namespace FluentChunker
                 /// Sets the maximum number of tokens a single chunk may contain.
                 /// </summary>
                 /// <param name="maxTokens">The chunk size limit in tokens.
-                /// Must be positive.</param>
+                /// Must be at least 4, the most tokens a single character can span, since a character is never split across chunks.
+                /// No chunk ever exceeds this limit.</param>
                 /// <returns>The final step.
                 /// Structure-aware chunking has no overlap, so it offers only abbreviations, no <c>WithOverlap</c>.</returns>
-                /// <exception cref="ArgumentOutOfRangeException"><paramref name="maxTokens"/> is zero or negative.</exception>
+                /// <exception cref="ArgumentOutOfRangeException"><paramref name="maxTokens"/> is less than 4.</exception>
                 public StructureAwareOptionsStep WithMaxTokenSize(int maxTokens)
                 {
                     _builder.SetMaxTokenSize(maxTokens);

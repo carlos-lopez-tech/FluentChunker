@@ -43,8 +43,11 @@ namespace FluentChunker.Tests
                 splitterStep.UseSplitter(s => s.WithFixedSizeChunking()));
         }
 
-        [Test]
-        public void WithMaxTokenSize_NonPositiveValue_ThrowsArgumentOutOfRangeException()
+        [TestCase(-1)]
+        [TestCase(0)]
+        [TestCase(1)]
+        [TestCase(3)]
+        public void WithMaxTokenSize_BelowFourTokens_ThrowsArgumentOutOfRangeException(int maxTokens)
         {
             // Arrange
             var splitterStep = ChunkingPipeline.CreateBuilder()
@@ -54,7 +57,25 @@ namespace FluentChunker.Tests
             Assert.Throws<ArgumentOutOfRangeException>(() =>
                 splitterStep.UseSplitter(s => s
                     .WithFixedSizeChunking()
-                    .WithMaxTokenSize(0)));
+                    .WithMaxTokenSize(maxTokens)));
+        }
+
+        [Test]
+        public void WithMaxTokenSize_ExactlyFourTokens_IsAccepted()
+        {
+            // Arrange - four is the smallest budget that always holds a single character
+            var splitterStep = ChunkingPipeline.CreateBuilder()
+                .UseTokenizer(_microsoftMLTokenizer);
+
+            // Act
+            var pipeline = splitterStep
+                .UseSplitter(s => s
+                    .WithFixedSizeChunking()
+                    .WithMaxTokenSize(4))
+                .Build();
+
+            // Assert
+            Assert.That(pipeline.Chunk("Alpha beta gamma delta epsilon zeta."), Is.Not.Empty);
         }
 
         [Test]
@@ -299,8 +320,9 @@ namespace FluentChunker.Tests
                 splitterStep.UseSplitter(s => s.WithStructureAwareChunking()));
         }
 
-        [Test]
-        public void WithStructureAwareChunking_NonPositiveMaxTokenSize_ThrowsArgumentOutOfRangeException()
+        [TestCase(0)]
+        [TestCase(3)]
+        public void WithStructureAwareChunking_MaxTokenSizeBelowFour_ThrowsArgumentOutOfRangeException(int maxTokens)
         {
             // Arrange
             var splitterStep = ChunkingPipeline.CreateBuilder()
@@ -310,7 +332,7 @@ namespace FluentChunker.Tests
             Assert.Throws<ArgumentOutOfRangeException>(() =>
                 splitterStep.UseSplitter(s => s
                     .WithStructureAwareChunking()
-                    .WithMaxTokenSize(0)));
+                    .WithMaxTokenSize(maxTokens)));
         }
 
         [Test]

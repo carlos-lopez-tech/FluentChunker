@@ -116,17 +116,29 @@ namespace FluentChunker.Chunkers.StructureAware
             return mapped;
         }
 
-        // Counts the tokens of each unit.
-        // From the second unit onward the count includes the whitespace between it and the previous unit,
-        // because a chunk is later sliced as one continuous span and that in-between whitespace ends up inside the slice.
+        // Counts the tokens of each unit, budgeting for the worse of the two positions it can occupy.
+        // A unit in the middle of a chunk is sliced together with the whitespace before it, but a unit that begins a chunk is sliced from its own start and loses that whitespace.
+        // Dropping a leading space can raise the count instead of lowering it, because BPE encodes a space-prefixed word more cheaply than a bare one, so only the larger of the two counts keeps a packed chunk inside the budget.
         private int[] CountUnitTokens(string text, IReadOnlyList<SectionBlock> units)
         {
             var tokenCounts = new int[units.Count];
 
             for (var i = 0; i < units.Count; i++)
             {
-                var start = i == 0 ? units[i].Span.Start : units[i - 1].Span.End;
-                tokenCounts[i] = _tokenizer.CountTokens(text[start..units[i].Span.End]);
+                var unit = units[i].Span;
+                var asChunkStart = _tokenizer.CountTokens(text.Substring(unit.Start, unit.Length));
+
+                // The first unit has no preceding whitespace to lose, so it costs the same in either position.
+                if (i == 0)
+                {
+                    tokenCounts[i] = asChunkStart;
+                    continue;
+                }
+
+                var previousEnd = units[i - 1].Span.End;
+                var insideChunk = _tokenizer.CountTokens(text.Substring(previousEnd, unit.End - previousEnd));
+
+                tokenCounts[i] = Math.Max(asChunkStart, insideChunk);
             }
 
             return tokenCounts;
@@ -145,12 +157,13 @@ namespace FluentChunker.Chunkers.StructureAware
         }
 
         // A unit over budget with no smaller structure available is cut into evenly balanced token windows.
-        // Unlike every other chunk, this text is rebuilt from tokens instead of sliced from the source, so it may gain a leading space from the tokenizer.
+        // Every boundary lands on a legal cut, so the windows concatenate back to the unit exactly.
         private void EmitTokenWindows(string text, SentenceSpan unit, string headingPath, List<Chunk> chunks, ref int index)
         {
             var tokens = _tokenizer.Encode(text.Substring(unit.Start, unit.Length));
+            var boundary = new TokenBoundary(_tokenizer, tokens);
 
-            foreach (var (start, length) in TokenWindows.Balanced(tokens.Count, _maxTokens))
+            foreach (var (start, length) in TokenWindows.Balanced(tokens.Count, _maxTokens, boundary))
             {
                 var window = TokenWindows.Slice(tokens, start, length);
                 chunks.Add(CreateChunk(index++, _tokenizer.Decode(window), length, headingPath));

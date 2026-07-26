@@ -109,32 +109,43 @@ namespace FluentChunker.Chunkers.SentenceAware
             }
         }
 
-        // Counts the tokens of each sentence.
-        // From the second sentence onward the count includes the whitespace between it and the previous sentence,
-        // because a chunk is later sliced as one continuous span and that in-between whitespace ends up inside the slice.
-        // Counting it here keeps the packing decision honest about the chunk's real size.
+        // Counts the tokens of each sentence, budgeting for the worse of the two positions it can occupy.
+        // A sentence in the middle of a chunk is sliced together with the whitespace before it, but a sentence that begins a chunk is sliced from its own start and loses that whitespace.
+        // Dropping a leading space can raise the count instead of lowering it, because BPE encodes a space-prefixed word more cheaply than a bare one, so only the larger of the two counts keeps a packed chunk inside the budget.
         private int[] CountSentenceTokens(string text, IReadOnlyList<SentenceSpan> sentences)
         {
             var tokenCounts = new int[sentences.Count];
 
             for (var i = 0; i < sentences.Count; i++)
             {
-                var start = i == 0 ? sentences[i].Start : sentences[i - 1].End;
-                tokenCounts[i] = _tokenizer.CountTokens(text[start..sentences[i].End]);
+                var sentence = sentences[i];
+                var asChunkStart = _tokenizer.CountTokens(text.Substring(sentence.Start, sentence.Length));
+
+                // The first sentence has no preceding whitespace to lose, so it costs the same in either position.
+                if (i == 0)
+                {
+                    tokenCounts[i] = asChunkStart;
+                    continue;
+                }
+
+                var previousEnd = sentences[i - 1].End;
+                var insideChunk = _tokenizer.CountTokens(text.Substring(previousEnd, sentence.End - previousEnd));
+
+                tokenCounts[i] = Math.Max(asChunkStart, insideChunk);
             }
 
             return tokenCounts;
         }
 
         // A sentence that alone exceeds the budget has no smaller boundary to split on, so cut it into token windows instead.
-        // The windows are sized as evenly as possible (rather than filling each to the max and leaving a tiny last one, such as a lone "." chunk) and do not overlap.
-        // Unlike every other chunk, this text is rebuilt from tokens instead of sliced from the source,
-        // so it may gain a leading space that the tokenizer attaches to the first word.
+        // The windows are sized as evenly as possible rather than filling each to the max and leaving a tiny last one, such as a lone "." chunk, and they do not overlap.
+        // Every boundary lands on a legal cut, so the windows concatenate back to the sentence exactly.
         private void EmitOversizedSentence(string text, SentenceSpan sentence, List<Chunk> chunks, ref int index)
         {
             var tokens = _tokenizer.Encode(text.Substring(sentence.Start, sentence.Length));
+            var boundary = new TokenBoundary(_tokenizer, tokens);
 
-            foreach (var (start, length) in TokenWindows.Balanced(tokens.Count, _maxTokens))
+            foreach (var (start, length) in TokenWindows.Balanced(tokens.Count, _maxTokens, boundary))
             {
                 var window = TokenWindows.Slice(tokens, start, length);
 

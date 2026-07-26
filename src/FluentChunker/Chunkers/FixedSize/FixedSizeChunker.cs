@@ -29,10 +29,11 @@ namespace FluentChunker.Chunkers.FixedSize
 
             var chunks = new List<Chunk>();
             var index = 0;
+            var boundary = new TokenBoundary(_tokenizer, allTokens);
 
-            // Slide a window of maxTokens across the token list,
-            // stepping forward by (maxTokens - overlap) so each window shares exactly overlap tokens with the previous one.
-            foreach (var (start, length) in TokenWindows.Strided(allTokens.Count, _maxTokens, _maxTokens - _overlap))
+            // OverlapCount is set from windowOverlap rather than _overlap,
+            // so callers relying on it to reconstruct shared context see what the chunk actually contains.
+            foreach (var (start, length, windowOverlap) in TokenWindows.Strided(allTokens.Count, _maxTokens, _overlap, boundary))
             {
                 var window = TokenWindows.Slice(allTokens, start, length);
 
@@ -41,9 +42,7 @@ namespace FluentChunker.Chunkers.FixedSize
                     Index = index++,
                     Text = _tokenizer.Decode(window),
                     TokenCount = length,
-                    // Tokens carried into this chunk from the previous one.
-                    // The final window can be shorter than the overlap, in which case it is carried content entirely.
-                    OverlapCount = index == 1 ? 0 : Math.Min(_overlap, length)
+                    OverlapCount = windowOverlap
                 });
             }
 
