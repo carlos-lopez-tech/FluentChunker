@@ -1,4 +1,5 @@
-﻿using FluentChunker.Contracts;
+﻿using System.Text;
+using FluentChunker.Contracts;
 using FluentChunker.Tokenizers;
 
 namespace FluentChunker.Samples.Demo
@@ -7,6 +8,9 @@ namespace FluentChunker.Samples.Demo
     {
         static void Main()
         {
+            // Without this the console renders the non-Latin examples as question marks on Windows.
+            Console.OutputEncoding = Encoding.UTF8;
+
             var content = File.ReadAllText(SampleFile("testfile.txt"));
 
             // The encoding FluentChunker ships, used by the OpenAI embedding models.
@@ -32,8 +36,15 @@ namespace FluentChunker.Samples.Demo
                 meta.Set("CreatedAt", DateTime.UtcNow);
             });
 
+            Console.WriteLine("Each chunk reports the source range it was sliced from, as an inclusive start-end pair with a character count.");
+            Console.WriteLine("The note printed between two chunks states how their ranges relate:");
+            Console.WriteLine("  OVERLAP   - the following range begins before the preceding one ends, by the configured overlap");
+            Console.WriteLine("  ADJACENT  - the following range begins at the next index, with no characters in between");
+            Console.WriteLine("  SEPARATOR - the characters between the two ranges delimited the units and belong to neither chunk");
+            Console.WriteLine("In every case a chunk's text equals document.Substring(SourceStart, SourceLength).\n\n");
+
             Console.WriteLine(">>> Example 1: Fixed-Size Chunking <<<\n");
-            PrintChunks(chunks1);
+            PrintChunks(chunks1, content);
 
 
             // Example 2: Create Pipeline by using Sentence-Aware Chunking.
@@ -54,7 +65,7 @@ namespace FluentChunker.Samples.Demo
             });
 
             Console.WriteLine(">>> Example 2: Sentence-Aware Chunking <<<\n");
-            PrintChunks(chunks2);
+            PrintChunks(chunks2, content);
 
 
             // Example 3: Create Pipeline by using Sentence-Aware Chunking with custom abbreviations.
@@ -83,7 +94,7 @@ namespace FluentChunker.Samples.Demo
             });
 
             Console.WriteLine(">>> Example 3: Sentence-Aware Chunking with custom abbreviations <<<\n");
-            PrintChunks(chunks3);
+            PrintChunks(chunks3, abbreviationText);
 
 
             // Example 4: Create Pipeline by using Recursive Chunking.
@@ -107,7 +118,7 @@ namespace FluentChunker.Samples.Demo
             });
 
             Console.WriteLine(">>> Example 4: Recursive Chunking <<<\n");
-            PrintChunks(chunks4);
+            PrintChunks(chunks4, content);
 
 
             // Example 5: Recursive Chunking descending into an oversized paragraph.
@@ -135,7 +146,7 @@ namespace FluentChunker.Samples.Demo
             var chunks5 = pipeline5.Chunk(descentText, meta => meta.Set("Source", "inline"));
 
             Console.WriteLine(">>> Example 5: Recursive Chunking (descent into an oversized paragraph) <<<\n");
-            PrintChunks(chunks5);
+            PrintChunks(chunks5, descentText);
 
 
             // Example 6: Structure-Aware Chunking over a Markdown document.
@@ -161,7 +172,33 @@ namespace FluentChunker.Samples.Demo
             });
 
             Console.WriteLine(">>> Example 6: Structure-Aware Chunking (Markdown sections) <<<\n");
-            PrintChunks(chunks6);
+            PrintChunks(chunks6, markdownContent);
+
+
+            // Example 7: Sentence-Aware Chunking over a document that mixes writing systems.
+            // Nothing here is configured for language: the terminators of each script are recognised out of the box,
+            // including the fullwidth forms, which end a sentence without the trailing space Latin punctuation requires.
+            // Devanagari costs far more tokens per character than Latin under cl100k_base, so the budget has to clear 23 tokens for the Hindi sentence alone.
+            var pipeline7 = ChunkingPipeline.CreateBuilder()
+                .UseTokenizer(microsoftMLTokenizer)
+                .UseSplitter(s => s
+                    .WithSentenceAwareChunking()
+                    .WithMaxTokenSize(30))
+                .AddMetadata(meta => meta.Set("SourceType", "inline-sample"))
+                .Build();
+
+            var multilingualText =
+                "An English sentence opens the document. " +
+                "这是第一句中文。这是第二句中文。" +
+                "Then English resumes for a sentence. " +
+                "هذا سؤال؟ نعم هذا صحيح. " +
+                "यह एक हिंदी वाक्य है। " +
+                "And a final English sentence closes it.";
+
+            var chunks7 = pipeline7.Chunk(multilingualText, meta => meta.Set("Source", "inline"));
+
+            Console.WriteLine(">>> Example 7: Sentence-Aware Chunking across writing systems <<<\n");
+            PrintChunks(chunks7, multilingualText);
 
             if (!Console.IsInputRedirected)
             {
@@ -172,21 +209,59 @@ namespace FluentChunker.Samples.Demo
         private static string SampleFile(string fileName) =>
             Path.Combine(AppContext.BaseDirectory, "testfiles", fileName);
 
-        private static void PrintChunks(IReadOnlyList<Chunk> chunks)
+        private static void PrintChunks(IReadOnlyList<Chunk> chunks, string document)
         {
-            foreach (var chunk in chunks)
+            for (var i = 0; i < chunks.Count; i++)
             {
-                Console.WriteLine($"Index: [{chunk.Index}] ({chunk.TokenCount} tokens) ({chunk.OverlapCount} overlap)");
+                var chunk = chunks[i];
+
+                // The end is the last index the chunk actually covers, so adjacent chunks read as 55 then 56 rather than repeating a boundary number.
+                var sourceEnd = chunk.SourceStart + chunk.SourceLength - 1;
+                Console.WriteLine($"Index: [{chunk.Index}] ({chunk.TokenCount} tokens) ({chunk.OverlapCount} overlap) (source {chunk.SourceStart}-{sourceEnd}, {chunk.SourceLength} chars)");
                 foreach (var kvp in chunk.Metadata)
                 {
                     Console.WriteLine($"  {kvp.Key}: {kvp.Value}");
                 }
                 Console.WriteLine($"  Text:  {chunk.Text}");
 
-                Console.WriteLine(string.Concat(Enumerable.Repeat("- ", 50)));
+                Console.WriteLine(i + 1 < chunks.Count
+                    ? DescribeSeam(chunk, chunks[i + 1], document)
+                    : string.Concat(Enumerable.Repeat("- ", 50)));
                 Console.WriteLine("\n");
             }
             Console.WriteLine("\n");
         }
+
+        // Consecutive chunk ranges relate in one of three ways, and stating which one applies keeps the reported offsets unambiguous.
+        // The blank line before the note separates it from the rule closing the preceding chunk, so the note reads as belonging to the seam rather than to that chunk.
+        private static string DescribeSeam(Chunk left, Chunk right, string document)
+        {
+            var separator = string.Concat(Enumerable.Repeat("- ", 50));
+
+            if (left.SourceStart < 0 || right.SourceStart < 0)
+                return separator;
+
+            var leftEnd = left.SourceStart + left.SourceLength;
+
+            if (right.SourceStart < leftEnd)
+                return $"{separator}\n\n  ^ OVERLAP: [{right.Index}] begins at {right.SourceStart}, {leftEnd - right.SourceStart} characters before [{left.Index}] ends. The shared characters appear in both chunks.";
+
+            if (right.SourceStart == leftEnd)
+                return $"{separator}\n\n  ^ ADJACENT: [{right.Index}] begins at {right.SourceStart}, immediately after {leftEnd - 1}. No characters lie between the two ranges.";
+
+            var between = document[leftEnd..right.SourceStart];
+            return $"{separator}\n\n  ^ SEPARATOR: {between.Length} character(s) at {leftEnd}-{right.SourceStart - 1} ({Visualise(between)}) lie between the ranges and belong to neither chunk.";
+        }
+
+        // Separator characters are whitespace, which the console renders as nothing, so each one is printed by name instead.
+        private static string Visualise(string text) =>
+            string.Join(" ", text.Select(c => c switch
+            {
+                ' ' => "SP",
+                '\n' => "LF",
+                '\r' => "CR",
+                '\t' => "TAB",
+                _ => $"U+{(int)c:X4}"
+            }));
     }
 }

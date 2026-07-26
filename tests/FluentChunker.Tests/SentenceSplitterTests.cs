@@ -369,5 +369,213 @@ namespace FluentChunker.Tests
                 Assert.That(Slice(text, result[1]), Is.EqualTo("She left."));
             }
         }
+
+        [Test]
+        public void Split_ChineseSentences_SplitsAtIdeographicFullStop()
+        {
+            // Arrange
+            var text = "这是第一句话。这是第二句话。这是第三句话。";
+
+            // Act
+            var result = SentenceSplitter.Split(text);
+
+            // Assert
+            Assert.That(result, Has.Count.EqualTo(3));
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(Slice(text, result[0]), Is.EqualTo("这是第一句话。"));
+                Assert.That(Slice(text, result[1]), Is.EqualTo("这是第二句话。"));
+                Assert.That(Slice(text, result[2]), Is.EqualTo("这是第三句话。"));
+            }
+        }
+
+        [Test]
+        public void Split_JapaneseSentences_SplitsWithoutRequiringWhitespace()
+        {
+            // Arrange - Japanese is written without spaces between sentences, so a trailing space cannot be required.
+            var text = "これは最初の文です。これは二番目の文です。";
+
+            // Act
+            var result = SentenceSplitter.Split(text);
+
+            // Assert
+            Assert.That(result, Has.Count.EqualTo(2));
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(Slice(text, result[0]), Is.EqualTo("これは最初の文です。"));
+                Assert.That(Slice(text, result[1]), Is.EqualTo("これは二番目の文です。"));
+            }
+        }
+
+        [Test]
+        public void Split_FullwidthExclamationAndQuestionMark_SplitSentences()
+        {
+            // Arrange
+            var text = "本当ですか？はい！そうです。";
+
+            // Act
+            var result = SentenceSplitter.Split(text);
+
+            // Assert
+            Assert.That(result, Has.Count.EqualTo(3));
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(Slice(text, result[0]), Is.EqualTo("本当ですか？"));
+                Assert.That(Slice(text, result[1]), Is.EqualTo("はい！"));
+                Assert.That(Slice(text, result[2]), Is.EqualTo("そうです。"));
+            }
+        }
+
+        [Test]
+        public void Split_HindiDanda_SplitsAtDanda()
+        {
+            // Arrange
+            var text = "यह पहला वाक्य है। यह दूसरा वाक्य है।";
+
+            // Act
+            var result = SentenceSplitter.Split(text);
+
+            // Assert
+            Assert.That(result, Has.Count.EqualTo(2));
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(Slice(text, result[0]), Is.EqualTo("यह पहला वाक्य है।"));
+                Assert.That(Slice(text, result[1]), Is.EqualTo("यह दूसरा वाक्य है।"));
+            }
+        }
+
+        [Test]
+        public void Split_ArabicQuestionMark_SplitsAtQuestionMark()
+        {
+            // Arrange
+            var text = "هذا سؤال؟ نعم هذا صحيح. شكرا لك.";
+
+            // Act
+            var result = SentenceSplitter.Split(text);
+
+            // Assert
+            Assert.That(result, Has.Count.EqualTo(3));
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(Slice(text, result[0]), Is.EqualTo("هذا سؤال؟"));
+                Assert.That(Slice(text, result[1]), Is.EqualTo("نعم هذا صحيح."));
+                Assert.That(Slice(text, result[2]), Is.EqualTo("شكرا لك."));
+            }
+        }
+
+        [Test]
+        public void Split_HebrewSentences_SplitAtPeriodFollowedByCaselessLetter()
+        {
+            // Arrange - Hebrew has no case, so the next-character rule rejected this boundary before.
+            var text = "זה משפט ראשון. זה משפט שני.";
+
+            // Act
+            var result = SentenceSplitter.Split(text);
+
+            // Assert
+            Assert.That(result, Has.Count.EqualTo(2));
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(Slice(text, result[0]), Is.EqualTo("זה משפט ראשון."));
+                Assert.That(Slice(text, result[1]), Is.EqualTo("זה משפט שני."));
+            }
+        }
+
+        [Test]
+        public void Split_PeriodFollowedByCaselessScript_SplitsSentence()
+        {
+            // Arrange - a single non-Latin passage inside an English document used to defeat the splitter at that point.
+            var text = "An English sentence. 这是中文句子。And back to English.";
+
+            // Act
+            var result = SentenceSplitter.Split(text);
+
+            // Assert
+            Assert.That(result, Has.Count.EqualTo(3));
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(Slice(text, result[0]), Is.EqualTo("An English sentence."));
+                Assert.That(Slice(text, result[1]), Is.EqualTo("这是中文句子。"));
+                Assert.That(Slice(text, result[2]), Is.EqualTo("And back to English."));
+            }
+        }
+
+        [Test]
+        public void Split_IdeographicFullStopFollowedByLatinText_SplitsSentence()
+        {
+            // Arrange - the reverse direction: a non-spacing terminator handing back to a Latin script.
+            var text = "Chinese follows。English resumes here.";
+
+            // Act
+            var result = SentenceSplitter.Split(text);
+
+            // Assert
+            Assert.That(result, Has.Count.EqualTo(2));
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(Slice(text, result[0]), Is.EqualTo("Chinese follows。"));
+                Assert.That(Slice(text, result[1]), Is.EqualTo("English resumes here."));
+            }
+        }
+
+        [Test]
+        public void Split_ThaiAfterEnglishSentence_SplitsAtPeriod()
+        {
+            // Arrange - Thai is caseless and uses no sentence terminator of its own, so only the relaxed rule applies here.
+            var text = "This is Thai. ไทย ไม่ ใช้ จุด";
+
+            // Act
+            var result = SentenceSplitter.Split(text);
+
+            // Assert
+            Assert.That(result, Has.Count.EqualTo(2));
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(Slice(text, result[0]), Is.EqualTo("This is Thai."));
+                Assert.That(Slice(text, result[1]), Is.EqualTo("ไทย ไม่ ใช้ จุด"));
+            }
+        }
+
+        [Test]
+        public void Split_LatinLowercaseAfterTerminator_StillDoesNotSplit()
+        {
+            // Arrange - regression pin: the caseless relaxation must not admit Latin lowercase, which is IsLower.
+            var text = "He did it. and then left.";
+
+            // Act
+            var result = SentenceSplitter.Split(text);
+
+            // Assert
+            Assert.That(result, Has.Count.EqualTo(1));
+            Assert.That(Slice(text, result[0]), Is.EqualTo(text));
+        }
+
+        [Test]
+        public void Split_AbbreviationFollowedByCaselessScript_DoesNotSplit()
+        {
+            // Arrange - regression pin: the abbreviation guard runs before the next-character rule is even consulted.
+            var text = "Dr. 这是中文。";
+
+            // Act
+            var result = SentenceSplitter.Split(text);
+
+            // Assert
+            Assert.That(result, Has.Count.EqualTo(1));
+            Assert.That(Slice(text, result[0]), Is.EqualTo("Dr. 这是中文。"));
+        }
+
+        [Test]
+        public void Split_NonSpacingTerminatorAtEndOfText_ProducesNoEmptyTrailingSpan()
+        {
+            // Arrange
+            var text = "只有一句话。";
+
+            // Act
+            var result = SentenceSplitter.Split(text);
+
+            // Assert
+            Assert.That(result, Has.Count.EqualTo(1));
+            Assert.That(Slice(text, result[0]), Is.EqualTo("只有一句话。"));
+        }
     }
 }

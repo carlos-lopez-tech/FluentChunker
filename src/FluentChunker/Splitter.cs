@@ -171,6 +171,7 @@ namespace FluentChunker
                 /// <summary>
                 /// Adds abbreviations whose trailing period should not end a sentence (e.g. <c>"Prof."</c>), extending the built-in EN/DE/FR/ES set.
                 /// Matching is case-insensitive, and repeated calls accumulate instead of replacing.
+                /// Only the abbreviation guard is language-specific: sentence boundaries themselves are detected for Latin, CJK, Indic, Arabic, Hebrew and Thai text without any configuration.
                 /// Only sentence-aware and recursive chunking consult them.
                 /// </summary>
                 /// <param name="abbreviations">The abbreviations to add.
@@ -223,6 +224,7 @@ namespace FluentChunker
                 /// <summary>
                 /// Adds abbreviations whose trailing period should not end a sentence (e.g. <c>"Prof."</c>), extending the built-in EN/DE/FR/ES set.
                 /// Matching is case-insensitive, and repeated calls accumulate instead of replacing.
+                /// Only the abbreviation guard is language-specific: sentence boundaries themselves are detected for Latin, CJK, Indic, Arabic, Hebrew and Thai text without any configuration.
                 /// Consulted only when an oversized paragraph descends to sentences.
                 /// </summary>
                 /// <param name="abbreviations">The abbreviations to add.

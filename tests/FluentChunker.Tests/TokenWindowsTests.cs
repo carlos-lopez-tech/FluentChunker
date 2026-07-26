@@ -23,7 +23,7 @@ namespace FluentChunker.Tests
             var boundary = new TokenBoundary(_tokenizer, tokens);
 
             // Act
-            var windows = TokenWindows.Strided(tokens.Count, maxTokens: 5, overlapTokens: 0, boundary).ToList();
+            var windows = TokenWindows.Strided(tokens.Count, maxTokens: 5, overlap: 0, boundary).ToList();
 
             // Assert
             Assert.That(windows, Is.Not.Empty);
@@ -44,7 +44,7 @@ namespace FluentChunker.Tests
             var boundary = new TokenBoundary(_tokenizer, tokens);
 
             // Act
-            var windows = TokenWindows.Strided(tokens.Count, maxTokens: 6, overlapTokens: 2, boundary).ToList();
+            var windows = TokenWindows.Strided(tokens.Count, maxTokens: 6, overlap: 2, boundary).ToList();
 
             // Assert
             Assert.That(windows, Has.Count.GreaterThan(1));
@@ -64,7 +64,7 @@ namespace FluentChunker.Tests
             var boundary = new TokenBoundary(_tokenizer, tokens);
 
             // Act
-            var windows = TokenWindows.Strided(tokens.Count, maxTokens: 5, overlapTokens: 0, boundary).ToList();
+            var windows = TokenWindows.Strided(tokens.Count, maxTokens: 5, overlap: 0, boundary).ToList();
 
             // Assert
             var illegal = windows.Where(w => !boundary.IsSafeCut(w.Start) || !boundary.IsSafeCut(w.Start + w.Length)).ToList();
@@ -80,7 +80,7 @@ namespace FluentChunker.Tests
 
             // Act
             var text = string.Concat(TokenWindows
-                .Strided(tokens.Count, maxTokens: 5, overlapTokens: 0, boundary)
+                .Strided(tokens.Count, maxTokens: 5, overlap: 0, boundary)
                 .Select(w => _tokenizer.Decode(TokenWindows.Slice(tokens, w.Start, w.Length))));
 
             // Assert
@@ -201,6 +201,87 @@ namespace FluentChunker.Tests
 
             // Assert
             Assert.That(windows, Is.Empty);
+        }
+
+        [Test]
+        public void Strided_AsciiWithoutOverlap_CharacterExtentsTileTheSourceExactly()
+        {
+            // Arrange
+            var tokens = _tokenizer.Encode(Ascii);
+            var boundary = new TokenBoundary(_tokenizer, tokens);
+
+            // Act
+            var windows = TokenWindows.Strided(tokens.Count, maxTokens: 5, overlap: 0, boundary).ToList();
+
+            // Assert
+            Assert.That(windows, Is.Not.Empty);
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(windows[0].CharStart, Is.Zero);
+                Assert.That(windows.Sum(w => w.CharLength), Is.EqualTo(Ascii.Length));
+                Assert.That(windows[^1].CharStart + windows[^1].CharLength, Is.EqualTo(Ascii.Length));
+            }
+        }
+
+        [TestCase(4)]
+        [TestCase(6)]
+        [TestCase(10)]
+        public void Strided_MultiByteTextWithOverlap_CharacterExtentsSliceTheSourceBackToTheWindow(int maxTokens)
+        {
+            // Arrange - the extent must select exactly the text the window decodes to, overlap included.
+            var tokens = _tokenizer.Encode(MultiByte);
+            var boundary = new TokenBoundary(_tokenizer, tokens);
+
+            // Act
+            var mismatched = TokenWindows
+                .Strided(tokens.Count, maxTokens, overlap: 2, boundary)
+                .Where(w => MultiByte.Substring(w.CharStart, w.CharLength)
+                            != _tokenizer.Decode(TokenWindows.Slice(tokens, w.Start, w.Length)))
+                .ToList();
+
+            // Assert
+            Assert.That(mismatched, Is.Empty);
+        }
+
+        [TestCase(3)]
+        [TestCase(6)]
+        [TestCase(10)]
+        public void Balanced_MultiByteText_CharacterExtentsSliceTheSourceBackToTheWindow(int maxTokens)
+        {
+            // Arrange
+            var tokens = _tokenizer.Encode(MultiByte);
+            var boundary = new TokenBoundary(_tokenizer, tokens);
+
+            // Act
+            var mismatched = TokenWindows
+                .Balanced(tokens.Count, maxTokens, boundary)
+                .Where(w => MultiByte.Substring(w.CharStart, w.CharLength)
+                            != _tokenizer.Decode(TokenWindows.Slice(tokens, w.Start, w.Length)))
+                .ToList();
+
+            // Assert
+            Assert.That(mismatched, Is.Empty);
+        }
+
+        [Test]
+        public void Balanced_MultiByteText_CharacterExtentsPartitionTheSource()
+        {
+            // Arrange - Balanced never overlaps, so its extents must butt up against each other with no gap.
+            var tokens = _tokenizer.Encode(MultiByte);
+            var boundary = new TokenBoundary(_tokenizer, tokens);
+
+            // Act
+            var windows = TokenWindows.Balanced(tokens.Count, maxTokens: 6, boundary).ToList();
+
+            // Assert
+            Assert.That(windows, Has.Count.GreaterThan(1));
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(windows[0].CharStart, Is.Zero);
+                Assert.That(windows.Sum(w => w.CharLength), Is.EqualTo(MultiByte.Length));
+                Assert.That(windows.Zip(windows.Skip(1)).Where(p => p.First.CharStart + p.First.CharLength != p.Second.CharStart),
+                    Is.Empty);
+            }
         }
     }
 }

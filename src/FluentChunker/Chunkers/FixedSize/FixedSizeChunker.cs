@@ -25,24 +25,32 @@ namespace FluentChunker.Chunkers.FixedSize
             var allTokens = _tokenizer.Encode(text);
 
             if (allTokens.Count <= _maxTokens)
-                return [new Chunk { Index = 0, Text = text, TokenCount = allTokens.Count }];
+                return [new Chunk
+                {
+                    Index = 0,
+                    Text = text,
+                    TokenCount = allTokens.Count,
+                    SourceStart = 0,
+                    SourceLength = text.Length
+                }];
 
             var chunks = new List<Chunk>();
             var index = 0;
             var boundary = new TokenBoundary(_tokenizer, allTokens);
 
-            // OverlapCount is set from windowOverlap rather than _overlap,
+            // OverlapCount is set from the window rather than _overlap,
             // so callers relying on it to reconstruct shared context see what the chunk actually contains.
-            foreach (var (start, length, windowOverlap) in TokenWindows.Strided(allTokens.Count, _maxTokens, _overlap, boundary))
+            // The window's character extent selects the same text the tokens decode to, which lets the chunk be a verbatim source slice.
+            foreach (var window in TokenWindows.Strided(allTokens.Count, _maxTokens, _overlap, boundary))
             {
-                var window = TokenWindows.Slice(allTokens, start, length);
-
                 chunks.Add(new Chunk
                 {
                     Index = index++,
-                    Text = _tokenizer.Decode(window),
-                    TokenCount = length,
-                    OverlapCount = windowOverlap
+                    Text = text.Substring(window.CharStart, window.CharLength),
+                    TokenCount = window.Length,
+                    OverlapCount = window.Overlap,
+                    SourceStart = window.CharStart,
+                    SourceLength = window.CharLength
                 });
             }
 

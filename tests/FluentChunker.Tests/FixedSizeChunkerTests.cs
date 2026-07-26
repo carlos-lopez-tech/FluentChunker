@@ -155,5 +155,26 @@ namespace FluentChunker.Tests
                     Is.EqualTo(result.Select(c => c.TokenCount)));
             }
         }
+
+        [Test]
+        public void Chunk_MultiByteDocumentWithOverlap_ReportsOffsetsThatSliceBackToEachChunk()
+        {
+            // Arrange
+            var document = string.Concat(Enumerable.Repeat("Hello 👨‍👩‍👧‍👦 family emoji test. ", 40));
+            var chunker = new FixedSizeChunker(_microsoftMLTokenizer, maxTokens: 20, overlap: 5);
+
+            // Act
+            var result = chunker.Chunk(document);
+
+            // Assert
+            Assert.That(result, Has.Count.GreaterThan(1));
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(result[0].SourceStart, Is.Zero);
+                Assert.That(result.Where(c => document.Substring(c.SourceStart, c.SourceLength) != c.Text), Is.Empty);
+                Assert.That(result.Where(c => c.SourceLength != c.Text.Length), Is.Empty);
+                Assert.That(result[^1].SourceStart + result[^1].SourceLength, Is.EqualTo(document.Length));
+            }
+        }
     }
 }

@@ -162,22 +162,25 @@ namespace FluentChunker.Chunkers.Recursive
         // A single sentence over budget has no structural boundary left to split on, so cut it into token windows instead.
         // The windows are sized as evenly as possible rather than filling each to the max and leaving a tiny last one, and they do not overlap.
         // Every boundary lands on a legal cut, so the windows concatenate back to the sentence exactly.
+        // Extents are relative to the sentence, so they are shifted by its start to point back into the document.
         private void EmitTokenWindows(string text, SentenceSpan sentence,
             List<Chunk> chunks, ref int index)
         {
             var tokens = _tokenizer.Encode(text.Substring(sentence.Start, sentence.Length));
             var boundary = new TokenBoundary(_tokenizer, tokens);
 
-            foreach (var (start, length) in TokenWindows.Balanced(tokens.Count, _maxTokens, boundary))
+            foreach (var window in TokenWindows.Balanced(tokens.Count, _maxTokens, boundary))
             {
-                var window = TokenWindows.Slice(tokens, start, length);
+                var sourceStart = sentence.Start + window.CharStart;
 
                 chunks.Add(new Chunk
                 {
                     Index = index++,
-                    Text = _tokenizer.Decode(window),
-                    TokenCount = length,
-                    OverlapCount = 0
+                    Text = text.Substring(sourceStart, window.CharLength),
+                    TokenCount = window.Length,
+                    OverlapCount = 0,
+                    SourceStart = sourceStart,
+                    SourceLength = window.CharLength
                 });
             }
         }
@@ -225,7 +228,9 @@ namespace FluentChunker.Chunkers.Recursive
                 Index = index++,
                 Text = chunkText,
                 TokenCount = _tokenizer.CountTokens(chunkText),
-                OverlapCount = overlapCount
+                OverlapCount = overlapCount,
+                SourceStart = start,
+                SourceLength = end - start
             });
         }
     }

@@ -153,31 +153,37 @@ namespace FluentChunker.Chunkers.StructureAware
             var end = units[bufferedUnits[^1]].Span.End;
             var chunkText = text[start..end];
 
-            chunks.Add(CreateChunk(index++, chunkText, _tokenizer.CountTokens(chunkText), headingPath));
+            chunks.Add(CreateChunk(index++, chunkText, _tokenizer.CountTokens(chunkText), headingPath, start, end - start));
         }
 
         // A unit over budget with no smaller structure available is cut into evenly balanced token windows.
         // Every boundary lands on a legal cut, so the windows concatenate back to the unit exactly.
+        // Extents are relative to the unit, so they are shifted by its start to point back into the document.
         private void EmitTokenWindows(string text, SentenceSpan unit, string headingPath, List<Chunk> chunks, ref int index)
         {
             var tokens = _tokenizer.Encode(text.Substring(unit.Start, unit.Length));
             var boundary = new TokenBoundary(_tokenizer, tokens);
 
-            foreach (var (start, length) in TokenWindows.Balanced(tokens.Count, _maxTokens, boundary))
+            foreach (var window in TokenWindows.Balanced(tokens.Count, _maxTokens, boundary))
             {
-                var window = TokenWindows.Slice(tokens, start, length);
-                chunks.Add(CreateChunk(index++, _tokenizer.Decode(window), length, headingPath));
+                var sourceStart = unit.Start + window.CharStart;
+
+                chunks.Add(CreateChunk(index++, text.Substring(sourceStart, window.CharLength),
+                    window.Length, headingPath, sourceStart, window.CharLength));
             }
         }
 
-        private static Chunk CreateChunk(int index, string text, int tokenCount, string headingPath)
+        private static Chunk CreateChunk(int index, string text, int tokenCount, string headingPath,
+            int sourceStart, int sourceLength)
         {
             var chunk = new Chunk
             {
                 Index = index,
                 Text = text,
                 TokenCount = tokenCount,
-                OverlapCount = 0
+                OverlapCount = 0,
+                SourceStart = sourceStart,
+                SourceLength = sourceLength
             };
             chunk.Metadata[HeadingPathMetadataKey] = JsonSerializer.SerializeToElement(headingPath);
             return chunk;

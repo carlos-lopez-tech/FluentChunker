@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-07-26
+
+### Added
+
+- **`Chunk.SourceStart` and `Chunk.SourceLength`.** Every chunk now reports where it came from, so
+  `document.Substring(chunk.SourceStart, chunk.SourceLength)` returns the chunk text exactly. This is
+  what citation, highlight-in-source and re-ranking against surrounding text need, and searching the
+  document for the chunk text was never a reliable substitute once overlap duplicated content. Both
+  default to `-1`, meaning "not tracked", so an `IChunker` implemented outside this library keeps
+  working unchanged. Every built-in strategy reports real values, including the token-window
+  fallbacks. With overlap configured, consecutive chunks deliberately report overlapping ranges.
+- **Sentence boundaries in non-Latin scripts.** Chinese, Japanese, Hindi, Urdu, Arabic, Hebrew and Thai
+  text produced no sentence boundaries at all, so it bypassed sentence-aware, recursive and
+  structure-aware chunking entirely and was cut on raw token counts. Two rules caused it: only `.!?`
+  counted as terminators, and a boundary additionally required the following character to be
+  uppercase, which caseless scripts can never satisfy. Terminators now include `。！？．` as
+  unconditional boundaries for scripts written without inter-sentence spaces, and `؟ ۔ । ॥` alongside
+  `.!?` for scripts that do use them, and a caseless letter counts as a sentence start. This also
+  fixes a single non-Latin passage inside an otherwise English document, which used to defeat the
+  splitter at that point. `AddAbbreviations` is unchanged: only the abbreviation guard is
+  language-specific, and it never applied to any of the added terminators.
+
+### Changed
+
+- **Every chunk is now a verbatim slice of the source document.** The token-window fallbacks used to
+  rebuild text from token IDs; they now select it by character offset. Text content is unchanged,
+  since 1.0.2 already made those windows reconstruct the source exactly, but the caveat that fallback
+  chunks are decoded rather than sliced is gone for good.
+
 ## [1.0.2] - 2026-07-26
 
 ### Fixed
@@ -82,6 +111,7 @@ First public release.
 - Size chunks with the encoding of the model that consumes them. The same text can differ by roughly
   10% between encodings, so the wrong one silently misreports the budget.
 
-[Unreleased]: https://github.com/carlos-lopez-tech/FluentChunker/compare/v1.0.2...HEAD
+[Unreleased]: https://github.com/carlos-lopez-tech/FluentChunker/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/carlos-lopez-tech/FluentChunker/compare/v1.0.2...v1.1.0
 [1.0.2]: https://github.com/carlos-lopez-tech/FluentChunker/compare/v1.0.0...v1.0.2
 [1.0.0]: https://github.com/carlos-lopez-tech/FluentChunker/releases/tag/v1.0.0

@@ -75,5 +75,11 @@ namespace FluentChunker.Chunkers
 
             return _tokens.Count;
         }
+
+        // Character length of a token run, used to turn token windows into character extents.
+        // Exact only between legal cuts, which is where the layouts place every boundary:
+        // lengths add across a legal cut precisely because decoding the two sides separately gives the same text as decoding them together.
+        internal int CharLengthOf(int start, int length) =>
+            _tokenizer.Decode(TokenWindows.Slice(_tokens, start, length)).Length;
     }
 }
