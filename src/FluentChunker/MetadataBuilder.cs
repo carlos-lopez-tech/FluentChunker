@@ -7,7 +7,7 @@ namespace FluentChunker
     /// </summary>
     public class MetadataBuilder
     {
-        private readonly Dictionary<string, JsonElement> _metadata = [];
+        private readonly Dictionary<string, JsonElement> _metadata = new(StringComparer.Ordinal);
 
         /// <summary>
         /// Adds an entry, serialized to JSON so it can be read back from <see cref="Contracts.Chunk.Metadata"/>.
@@ -23,6 +23,6 @@ namespace FluentChunker
             _metadata[key] = JsonSerializer.SerializeToElement(value);
         }
 
-        internal Dictionary<string, JsonElement> Build() => new(_metadata);
+        internal Dictionary<string, JsonElement> Build() => new(_metadata, StringComparer.Ordinal);
     }
 }

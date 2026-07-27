@@ -1,5 +1,3 @@
-using System.Text.Json;
-
 namespace FluentChunker.Contracts
 {
     /// <summary>
@@ -50,6 +48,17 @@ namespace FluentChunker.Contracts
         /// Pipeline-level and document-level metadata, merged, with document values winning.
         /// Structure-aware chunking reserves the key <c>headingPath</c> for its heading breadcrumb.
         /// </summary>
-        public Dictionary<string, JsonElement> Metadata { get; init; } = [];
+        /// <remarks>
+        /// Immutable.
+        /// Add an entry by copying the chunk: <c>chunk with { Metadata = chunk.Metadata.With("key", value) }</c>.
+        /// Never null: assigning null stores <see cref="ChunkMetadata.Empty"/>.
+        /// </remarks>
+        public ChunkMetadata Metadata
+        {
+            get => _metadata;
+            init => _metadata = value ?? ChunkMetadata.Empty;
+        }
+
+        private readonly ChunkMetadata _metadata = ChunkMetadata.Empty;
     }
 }

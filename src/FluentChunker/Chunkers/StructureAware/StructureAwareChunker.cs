@@ -41,7 +41,14 @@ namespace FluentChunker.Chunkers.StructureAware
             foreach (var section in sections)
             {
                 var headingPath = string.Join(HeadingPathSeparator, section.HeadingPath);
-                PackRun(text, section.Blocks, Tier.Blocks, headingPath, chunks, ref index);
+
+                // The heading path is constant within a section, so one immutable instance serves every chunk of it.
+                var sectionMetadata = new ChunkMetadata(new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+                {
+                    [HeadingPathMetadataKey] = JsonSerializer.SerializeToElement(headingPath)
+                });
+
+                PackRun(text, section.Blocks, Tier.Blocks, sectionMetadata, chunks, ref index);
             }
 
             return chunks;
@@ -50,7 +57,7 @@ namespace FluentChunker.Chunkers.StructureAware
         // Packs one run of same-level units into chunks.
         // Because every section is packed independently, a chunk can never span two sections: headings are hard seams.
         // A unit that alone exceeds the budget is flushed around and descended into, so units on opposite sides of it never share a chunk.
-        private void PackRun(string text, IReadOnlyList<SectionBlock> units, Tier tier, string headingPath, List<Chunk> chunks, ref int index)
+        private void PackRun(string text, IReadOnlyList<SectionBlock> units, Tier tier, ChunkMetadata sectionMetadata, List<Chunk> chunks, ref int index)
         {
             var tokenCounts = CountUnitTokens(text, units);
             var buffer = new List<int>();
@@ -60,17 +67,17 @@ namespace FluentChunker.Chunkers.StructureAware
             {
                 if (tokenCounts[i] > _maxTokens)
                 {
-                    FlushChunk(text, units, buffer, headingPath, chunks, ref index);
+                    FlushChunk(text, units, buffer, sectionMetadata, chunks, ref index);
                     buffer.Clear();
                     bufferTokens = 0;
 
-                    Descend(text, units[i], tier, headingPath, chunks, ref index);
+                    Descend(text, units[i], tier, sectionMetadata, chunks, ref index);
                     continue;
                 }
 
                 if (buffer.Count > 0 && bufferTokens + tokenCounts[i] > _maxTokens)
                 {
-                    FlushChunk(text, units, buffer, headingPath, chunks, ref index);
+                    FlushChunk(text, units, buffer, sectionMetadata, chunks, ref index);
                     buffer.Clear();
                     bufferTokens = 0;
                 }
@@ -79,21 +86,21 @@ namespace FluentChunker.Chunkers.StructureAware
                 bufferTokens += tokenCounts[i];
             }
 
-            FlushChunk(text, units, buffer, headingPath, chunks, ref index);
+            FlushChunk(text, units, buffer, sectionMetadata, chunks, ref index);
         }
 
         // An oversized atomic unit (heading, fence, table, list, quote) has nothing semantic to descend into; an oversized sentence has no smaller level left.
         // Both go straight to token windows.
         // Only an oversized paragraph descends to its sentences.
-        private void Descend(string text, SectionBlock unit, Tier tier, string headingPath, List<Chunk> chunks, ref int index)
+        private void Descend(string text, SectionBlock unit, Tier tier, ChunkMetadata sectionMetadata, List<Chunk> chunks, ref int index)
         {
             if (tier == Tier.Sentences || unit.IsAtomic)
             {
-                EmitTokenWindows(text, unit.Span, headingPath, chunks, ref index);
+                EmitTokenWindows(text, unit.Span, sectionMetadata, chunks, ref index);
                 return;
             }
 
-            PackRun(text, SplitSentences(text, unit.Span), Tier.Sentences, headingPath,
+            PackRun(text, SplitSentences(text, unit.Span), Tier.Sentences, sectionMetadata,
                 chunks, ref index);
         }
 
@@ -144,7 +151,7 @@ namespace FluentChunker.Chunkers.StructureAware
             return tokenCounts;
         }
 
-        private void FlushChunk(string text, IReadOnlyList<SectionBlock> units, List<int> bufferedUnits, string headingPath, List<Chunk> chunks, ref int index)
+        private void FlushChunk(string text, IReadOnlyList<SectionBlock> units, List<int> bufferedUnits, ChunkMetadata sectionMetadata, List<Chunk> chunks, ref int index)
         {
             if (bufferedUnits.Count == 0)
                 return;
@@ -153,13 +160,13 @@ namespace FluentChunker.Chunkers.StructureAware
             var end = units[bufferedUnits[^1]].Span.End;
             var chunkText = text[start..end];
 
-            chunks.Add(CreateChunk(index++, chunkText, _tokenizer.CountTokens(chunkText), headingPath, start, end - start));
+            chunks.Add(CreateChunk(index++, chunkText, _tokenizer.CountTokens(chunkText), sectionMetadata, start, end - start));
         }
 
         // A unit over budget with no smaller structure available is cut into evenly balanced token windows.
         // Every boundary lands on a legal cut, so the windows concatenate back to the unit exactly.
         // Extents are relative to the unit, so they are shifted by its start to point back into the document.
-        private void EmitTokenWindows(string text, SentenceSpan unit, string headingPath, List<Chunk> chunks, ref int index)
+        private void EmitTokenWindows(string text, SentenceSpan unit, ChunkMetadata sectionMetadata, List<Chunk> chunks, ref int index)
         {
             var tokens = _tokenizer.Encode(text.Substring(unit.Start, unit.Length));
             var boundary = new TokenBoundary(_tokenizer, tokens);
@@ -169,24 +176,21 @@ namespace FluentChunker.Chunkers.StructureAware
                 var sourceStart = unit.Start + window.CharStart;
 
                 chunks.Add(CreateChunk(index++, text.Substring(sourceStart, window.CharLength),
-                    window.Length, headingPath, sourceStart, window.CharLength));
+                    window.Length, sectionMetadata, sourceStart, window.CharLength));
             }
         }
 
-        private static Chunk CreateChunk(int index, string text, int tokenCount, string headingPath,
-            int sourceStart, int sourceLength)
-        {
-            var chunk = new Chunk
+        private static Chunk CreateChunk(int index, string text, int tokenCount, ChunkMetadata sectionMetadata,
+            int sourceStart, int sourceLength) =>
+            new()
             {
                 Index = index,
                 Text = text,
                 TokenCount = tokenCount,
                 OverlapCount = 0,
                 SourceStart = sourceStart,
-                SourceLength = sourceLength
+                SourceLength = sourceLength,
+                Metadata = sectionMetadata
             };
-            chunk.Metadata[HeadingPathMetadataKey] = JsonSerializer.SerializeToElement(headingPath);
-            return chunk;
-        }
     }
 }

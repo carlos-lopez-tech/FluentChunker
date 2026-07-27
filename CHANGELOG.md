@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-07-27
+
+### ⚠ Breaking
+
+- **`Chunk.Metadata` is now an immutable `ChunkMetadata` instead of `Dictionary<string, JsonElement>`.**
+  A breaking change ships in a minor version here as a deliberate, one-time exception: the library
+  is days old, and this is the last moment the fix is nearly free. Reading is unchanged —
+  `ChunkMetadata` implements `IReadOnlyDictionary<string, JsonElement>`, so indexers, `TryGetValue`,
+  `Count`, enumeration and LINQ all keep compiling. The one migration is in-place writes:
+
+  ```csharp
+  // before
+  chunk.Metadata["Reviewed"] = JsonSerializer.SerializeToElement(true);
+  // after
+  chunk = chunk with { Metadata = chunk.Metadata.With("Reviewed", true) };
+  ```
+- **`ChunkingPipeline` is a `sealed class` instead of a `record`.** Its compiler-generated value
+  equality was reference-broken and meaningless for a configuration object; `with` expressions on a
+  pipeline no longer compile. Build a new pipeline with `CreateBuilder()` instead.
+
+### Added
+
+- **Chunks are value objects, for real.** `Chunk` is a `record`, which always promised value
+  equality — but the mutable metadata dictionary compared by reference, so no two chunks were ever
+  equal, silently breaking `Distinct()`, `HashSet<Chunk>`, chunk-keyed caches and test assertions.
+  With metadata immutable, the compiler-generated equality is correct: deduplication before
+  embedding, caching by chunk and whole-chunk assertions now work. Metadata participates in
+  equality and hashing, so same-text chunks tagged with different `Source` values stay distinct.
+- **`ChunkMetadata`** — immutable, value-equal metadata map. `ChunkMetadata.Empty` is a shared
+  singleton; `With<T>(key, value)` returns a new instance with an entry added or replaced. Keys are
+  ordinal; values compare by raw JSON text (stricter than semantic equality, identical on both
+  target frameworks; documented on the type).
+
+### Changed
+
+- **Metadata stamping allocates less.** Chunks without metadata share one `Empty` instance instead
+  of allocating a dictionary each; the pipeline builds the merged pipeline+document metadata once
+  per call and shares it across chunks; structure-aware chunking builds one metadata instance per
+  section instead of one dictionary per chunk. `with` expressions share the immutable instance
+  instead of aliasing a mutable one — the copy-mutates-the-original defect is gone by construction.
+
 ## [1.1.0] - 2026-07-26
 
 ### Added
@@ -111,7 +152,8 @@ First public release.
 - Size chunks with the encoding of the model that consumes them. The same text can differ by roughly
   10% between encodings, so the wrong one silently misreports the budget.
 
-[Unreleased]: https://github.com/carlos-lopez-tech/FluentChunker/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/carlos-lopez-tech/FluentChunker/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/carlos-lopez-tech/FluentChunker/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/carlos-lopez-tech/FluentChunker/compare/v1.0.2...v1.1.0
 [1.0.2]: https://github.com/carlos-lopez-tech/FluentChunker/compare/v1.0.0...v1.0.2
 [1.0.0]: https://github.com/carlos-lopez-tech/FluentChunker/releases/tag/v1.0.0

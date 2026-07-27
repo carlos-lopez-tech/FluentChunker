@@ -26,6 +26,7 @@ Build composable document chunking pipelines for RAG, embeddings, semantic searc
 - **Overlap support**: Configure token overlap between chunks to preserve context; overlap is budgeted inside the max token size, so no chunk ever exceeds it
 - **Source offsets**: Every chunk reports where it came from, so results can be cited or highlighted in the original document
 - **Two metadata scopes**: Attach pipeline-level metadata (constant per run) and document-level metadata (per `Chunk` call) to each chunk
+- **Value-equal chunks**: `Chunk` is a true value object — deduplicate with `Distinct()`, key caches by chunk, and assert whole chunks in tests; metadata participates in equality
 - **Reusable pipelines**: Build once, execute against many documents; metadata never leaks between calls
 
 ## Quick Start
@@ -251,6 +252,23 @@ foreach (var doc in documents)
 }
 ```
 
+### Enriching Chunks After Chunking
+
+`Chunk.Metadata` is immutable, and chunks are records: to add an entry, copy the chunk with `with`:
+
+```csharp
+var enriched = chunk with
+{
+    Metadata = chunk.Metadata.With("Reviewed", true)
+};
+```
+
+`With` returns a new metadata instance and never modifies the original chunk. Because chunks are
+value-equal, two chunks with the same content and metadata compare equal — `Distinct()`,
+`HashSet<Chunk>`, and equality assertions in tests behave the way the `record` keyword promises.
+One caveat is documented on `ChunkMetadata`: values compare by raw JSON text, which is stricter
+than semantic JSON equality for hand-crafted `JsonElement`s (`1e-3` != `0.001`).
+
 ## Tokenizers
 
 ### MicrosoftMLTokenizer Integration
@@ -349,7 +367,7 @@ Each chunk contains:
 - `Text`: The actual chunk content
 - `TokenCount`: Number of tokens in this chunk; never exceeds the max token size
 - `OverlapCount`: Tokens carried into this chunk from the previous chunk (`0` on the first chunk)
-- `Metadata`: Dictionary of custom key-value pairs as `JsonElement` (access with e.g. `chunk.Metadata["Source"].GetString()`)
+- `Metadata`: Immutable map of custom key-value pairs as `JsonElement` (read with e.g. `chunk.Metadata["Source"].GetString()`; add entries with `chunk with { Metadata = chunk.Metadata.With("Key", value) }`)
 
 ### ITokenizer
 

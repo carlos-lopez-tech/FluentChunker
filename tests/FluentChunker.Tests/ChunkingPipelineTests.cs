@@ -130,7 +130,7 @@ namespace FluentChunker.Tests
 
             // Assert
             Assert.That(chunks1, Has.Count.EqualTo(chunks2.Count));
-            Assert.That(chunks1.Select(c => c.Text), Is.EqualTo(chunks2.Select(c => c.Text)));
+            Assert.That(chunks1, Is.EqualTo(chunks2));
         }
     }
 }

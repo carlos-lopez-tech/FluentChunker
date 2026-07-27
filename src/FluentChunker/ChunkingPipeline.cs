@@ -9,15 +9,18 @@ namespace FluentChunker
     /// An immutable, reusable chunking configuration.
     /// Build one with <see cref="CreateBuilder"/>, then run it against as many documents as needed.
     /// </summary>
-    public record ChunkingPipeline
+    public sealed class ChunkingPipeline
     {
         private readonly IChunker _chunker;
-        private readonly Dictionary<string, JsonElement> _metadata;
 
+        // Prebuilt once: with no document metadata, every stamped chunk shares this instance.
+        private readonly ChunkMetadata _pipelineMetadata;
+
+        // Takes ownership of the builder's dictionary, which it hands over and never touches again.
         internal ChunkingPipeline(IChunker chunker, Dictionary<string, JsonElement> metadata)
         {
             _chunker = chunker;
-            _metadata = metadata;
+            _pipelineMetadata = metadata.Count == 0 ? ChunkMetadata.Empty : new ChunkMetadata(metadata);
         }
 
         /// <summary>
@@ -49,39 +52,60 @@ namespace FluentChunker
             ArgumentNullException.ThrowIfNull(document);
 
             var chunks = _chunker.Chunk(document);
-            var metadata = BuildEffectiveMetadata(configureMetadata);
 
-            if (metadata is { Count: > 0 })
+            // Built once per call and shared by every chunk that carries no chunker metadata, so stamping allocates one container instead of one dictionary per chunk.
+            var effectiveMetadata = BuildEffectiveMetadata(configureMetadata);
+
+            if (effectiveMetadata.Count == 0)
+                return chunks;
+
+            var stamped = new Chunk[chunks.Count];
+            for (var i = 0; i < chunks.Count; i++)
             {
-                foreach (var chunk in chunks)
+                var chunk = chunks[i];
+                stamped[i] = chunk with
                 {
-                    foreach (var kvp in metadata)
-                    {
-                        chunk.Metadata[kvp.Key] = kvp.Value;
-                    }
-                }
+                    Metadata = chunk.Metadata.Count == 0 ? effectiveMetadata : Merge(chunk.Metadata, effectiveMetadata)
+                };
             }
 
-            return chunks;
+            return stamped;
         }
 
-        private Dictionary<string, JsonElement> BuildEffectiveMetadata(Action<MetadataBuilder>? configureMetadata)
+        // Document values overwrite pipeline values, and both overwrite chunker values such as headingPath,
+        // the same precedence stamping had when it wrote into the chunk's dictionary in place.
+        private static ChunkMetadata Merge(ChunkMetadata chunkerMetadata, ChunkMetadata effectiveMetadata)
+        {
+            var merged = new Dictionary<string, JsonElement>(chunkerMetadata.Count + effectiveMetadata.Count, StringComparer.Ordinal);
+            foreach (var kvp in chunkerMetadata)
+            {
+                merged[kvp.Key] = kvp.Value;
+            }
+            foreach (var kvp in effectiveMetadata)
+            {
+                merged[kvp.Key] = kvp.Value;
+            }
+
+            return new ChunkMetadata(merged);
+        }
+
+        private ChunkMetadata BuildEffectiveMetadata(Action<MetadataBuilder>? configureMetadata)
         {
             if (configureMetadata is null)
-                return _metadata;
+                return _pipelineMetadata;
 
             var metadataBuilder = new MetadataBuilder();
             configureMetadata(metadataBuilder);
             var documentMetadata = metadataBuilder.Build();
 
             // Copied rather than mutated, so the pipeline stays immutable and reusable across documents
-            var merged = new Dictionary<string, JsonElement>(_metadata);
+            var merged = new Dictionary<string, JsonElement>(_pipelineMetadata, StringComparer.Ordinal);
             foreach (var kvp in documentMetadata)
             {
                 merged[kvp.Key] = kvp.Value;
             }
 
-            return merged;
+            return new ChunkMetadata(merged);
         }
 
         private sealed class Builder : ITokenizerStep, ISplitterStep, IOptionalStep
@@ -123,7 +147,7 @@ namespace FluentChunker
             {
                 ArgumentNullException.ThrowIfNull(_chunker);
 
-                Dictionary<string, JsonElement> metadata = [];
+                Dictionary<string, JsonElement> metadata = new(StringComparer.Ordinal);
                 if (_metadata is not null)
                 {
                     var metadataBuilder = new MetadataBuilder();

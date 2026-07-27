@@ -219,5 +219,67 @@ namespace FluentChunker.Tests
                 Assert.That(chunksDoc3[0].Metadata, Is.Empty);
             }
         }
+
+        [Test]
+        public void Chunk_PipelineMetadata_IsOneInstanceSharedByAllChunks()
+        {
+            // Arrange - stamping builds the merged metadata once per call, not once per chunk.
+            var pipeline = ChunkingPipeline.CreateBuilder()
+                .UseTokenizer(_microsoftMLTokenizer)
+                .UseSplitter(s => s
+                    .WithFixedSizeChunking()
+                    .WithMaxTokenSize(10))
+                .AddMetadata(meta => meta.Set("Source", "shared.md"))
+                .Build();
+
+            // Act
+            var chunks = pipeline.Chunk(InputText);
+
+            // Assert
+            Assert.That(chunks, Has.Count.GreaterThan(1));
+            Assert.That(chunks[1].Metadata, Is.SameAs(chunks[0].Metadata));
+        }
+
+        [Test]
+        public void Chunk_StructureAwareChunksOfOneSection_ShareTheirSectionMetadata()
+        {
+            // Arrange
+            var pipeline = ChunkingPipeline.CreateBuilder()
+                .UseTokenizer(_microsoftMLTokenizer)
+                .UseSplitter(s => s
+                    .WithStructureAwareChunking()
+                    .WithMaxTokenSize(10))
+                .Build();
+
+            const string markdown = "# Section\n\nFirst paragraph with enough words to exceed the small budget alone.\n\n" +
+                                    "Second paragraph, also long enough to become its own separate chunk here.";
+
+            // Act
+            var chunks = pipeline.Chunk(markdown);
+
+            // Assert
+            Assert.That(chunks, Has.Count.GreaterThan(1));
+            Assert.That(chunks[1].Metadata, Is.SameAs(chunks[0].Metadata));
+        }
+
+        [Test]
+        public void Chunk_PipelineMetadataCollidingWithChunkerKey_OverridesTheChunkerValue()
+        {
+            // Arrange - headingPath is reserved by structure-aware chunking and colliding with it is discouraged,
+            // but the precedence is pinned: pipeline and document values overwrite chunker values, exactly as they did when stamping wrote into the chunk's dictionary.
+            var pipeline = ChunkingPipeline.CreateBuilder()
+                .UseTokenizer(_microsoftMLTokenizer)
+                .UseSplitter(s => s
+                    .WithStructureAwareChunking()
+                    .WithMaxTokenSize(50))
+                .AddMetadata(meta => meta.Set("headingPath", "override"))
+                .Build();
+
+            // Act
+            var chunks = pipeline.Chunk("# Real Heading\n\nBody text.");
+
+            // Assert
+            Assert.That(chunks[0].Metadata["headingPath"].GetString(), Is.EqualTo("override"));
+        }
     }
 }
