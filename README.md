@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/hero.png" alt="FluentChunker: composable, token-bounded text splitting for RAG, embeddings and search indexing" width="100%">
+</p>
+
 # FluentChunker
 
 [![NuGet](https://img.shields.io/nuget/v/FluentChunker.svg)](https://www.nuget.org/packages/FluentChunker)
@@ -12,7 +16,7 @@
 Production-ready fluent document chunking for .NET.
 Build composable document chunking pipelines for RAG, embeddings, semantic search, vector databases, and AI applications with an intuitive fluent, step-by-step builder API.
 
-[Features](#features) • [Quick Start](#quick-start) • [Installation](#installation) • [Usage Examples](#usage-examples) • [Tokenizers](#tokenizers) • [API Reference](#api-reference) • [Development](#development) • [License](#license)
+[Features](#features) • [Quick Start](#quick-start) • [Installation](#installation) • [Usage Examples](#usage-examples) • [Tokenizers](#tokenizers) • [API Reference](#api-reference) • [Requirements](#requirements) • [Development](#development) • [License](#license)
 
 ## Features
 
@@ -22,11 +26,11 @@ Build composable document chunking pipelines for RAG, embeddings, semantic searc
 - **Recursive chunking**: Split along a fixed structural hierarchy (paragraphs, then lines, then sentences), descending a level only for pieces that exceed the budget; chunks respect the largest structural boundary possible
 - **Structure-aware chunking (Markdown)**: Split Markdown documents at heading boundaries with a `headingPath` breadcrumb stamped into each chunk's metadata; code fences, tables and lists stay atomic; no overlap by design
 - **Token-aware chunking**: Split text by token count with accurate token counting
-- **Customizable tokenizers**: Use the built-in Microsoft.ML.Tokenizers integration or plug in your own tokenizer implementation
+- **Size against your embedding model, not just OpenAI**: Chunk with the tokenizer that will actually embed the text by passing any `Microsoft.ML.Tokenizers.Tokenizer` instance: BERT and WordPiece (BGE, E5), SentencePiece (Nomic, Qwen) and the Llama family. Or implement `ITokenizer` yourself. `cl100k_base` ships in the box. See [Sizing against a non-OpenAI model](#sizing-against-a-non-openai-model)
 - **Overlap support**: Configure token overlap between chunks to preserve context; overlap is budgeted inside the max token size, so no chunk ever exceeds it
 - **Source offsets**: Every chunk reports where it came from, so results can be cited or highlighted in the original document
 - **Two metadata scopes**: Attach pipeline-level metadata (constant per run) and document-level metadata (per `Chunk` call) to each chunk
-- **Value-equal chunks**: `Chunk` is a true value object — deduplicate with `Distinct()`, key caches by chunk, and assert whole chunks in tests; metadata participates in equality
+- **Value-equal chunks**: `Chunk` is a true value object: deduplicate with `Distinct()`, key caches by chunk, and assert whole chunks in tests; metadata participates in equality
 - **Reusable pipelines**: Build once, execute against many documents; metadata never leaks between calls
 
 ## Quick Start
@@ -35,9 +39,9 @@ Build composable document chunking pipelines for RAG, embeddings, semantic searc
 using FluentChunker;
 using FluentChunker.Tokenizers;
 
-// Create tokenizer and fluent, step-by-step builder pipeline
 // cl100k_base is the encoding of the OpenAI embedding models, the usual target when indexing for RAG.
-// It is the encoding included with FluentChunker. See Tokenizers below for chat model encodings.
+// It is the encoding included with FluentChunker.
+// See Tokenizers below for chat model encodings.
 var tokenizer = new MicrosoftMLTokenizerAdapter("cl100k_base");
 
 var pipeline = ChunkingPipeline.CreateBuilder()
@@ -53,7 +57,6 @@ var pipeline = ChunkingPipeline.CreateBuilder()
     })
     .Build();
 
-// Chunk the document and read the results
 var chunks = pipeline.Chunk(largeDocument);
 
 foreach (var chunk in chunks)
@@ -264,7 +267,7 @@ var enriched = chunk with
 ```
 
 `With` returns a new metadata instance and never modifies the original chunk. Because chunks are
-value-equal, two chunks with the same content and metadata compare equal — `Distinct()`,
+value-equal, two chunks with the same content and metadata compare equal: `Distinct()`,
 `HashSet<Chunk>`, and equality assertions in tests behave the way the `record` keyword promises.
 One caveat is documented on `ChunkMetadata`: values compare by raw JSON text, which is stricter
 than semantic JSON equality for hand-crafted `JsonElement`s (`1e-3` != `0.001`).
@@ -285,7 +288,7 @@ var pipeline = ChunkingPipeline.CreateBuilder()
     .Build();
 ```
 
-Need a different tokenizer? Implement `ITokenizer` and pass it to `UseTokenizer` (see [Custom Tokenizers](#custom-tokenizers) below).
+Need a different tokenizer? Pass any `Microsoft.ML.Tokenizers.Tokenizer` instance to the same adapter (see [Sizing against a non-OpenAI model](#sizing-against-a-non-openai-model) below), or implement `ITokenizer` yourself (see [Custom Tokenizers](#custom-tokenizers)).
 
 #### Choosing an encoding
 
@@ -294,11 +297,103 @@ Need a different tokenizer? Implement `ITokenizer` and pass it to `UseTokenizer`
 | Encoding | Use it when your chunks feed | Included? |
 |---|---|---|
 | `cl100k_base` | Embedding models: `text-embedding-3-small`, `text-embedding-3-large`, `text-embedding-ada-002`. Also legacy chat: GPT-4, GPT-3.5 | **Yes** |
-| Every other encoding | Newer chat and reasoning models, and the legacy GPT-3 and Codex models | No, add the matching data package |
+| `o200k_base` | GPT-4o and the newer chat and reasoning models | No, add the matching data package |
+| Every other encoding | The legacy GPT-3 and Codex models, and anything else | No, add the matching data package |
+
+The encoding is a property of the model, not of the task, so check the model card rather than assuming a newer embedding model kept `cl100k_base`.
 
 `cl100k_base` is the encoding FluentChunker ships with, and every example in this README uses it. Indexing documents for retrieval is the most common reason to reach for a chunker, and that means sizing against an embedding model.
 
 Any other encoding needs its own `Microsoft.ML.Tokenizers.Data.*` package referenced in your project. Without it the constructor throws an `InvalidOperationException` that names the exact package to add, so the failure tells you how to fix it.
+
+#### Non-Latin scripts cost 2x to 5x more tokens
+
+**A `maxTokens` value chosen against English is too small for most other scripts.** Tiktoken encodings are trained predominantly on English, so the same content costs far more tokens elsewhere. The same sentence, "This is a sentence about the weather today.", translated into each script and counted with `cl100k_base`:
+
+| Script | chars | tokens | tokens/char | vs English |
+|---|---|---|---|---|
+| English | 43 | 9 | 0.209 | 1.00x |
+| Spanish | 41 | 10 | 0.244 | 1.17x |
+| German | 44 | 12 | 0.273 | 1.30x |
+| Russian | 36 | 16 | 0.444 | 2.12x |
+| Arabic | 24 | 18 | 0.750 | 3.58x |
+| Greek | 44 | 36 | 0.818 | 3.91x |
+| Japanese | 17 | 15 | 0.882 | 4.22x |
+| Thai | 36 | 34 | 0.944 | 4.51x |
+| Korean | 20 | 19 | 0.950 | 4.54x |
+| Hindi | 38 | 38 | 1.000 | 4.78x |
+| Urdu | 38 | 39 | 1.026 | 4.90x |
+| Hebrew | 28 | 29 | 1.036 | 4.95x |
+| Chinese | 14 | 15 | 1.071 | 5.12x |
+
+Greek and Russian are affected too, which is easy to overlook because both are cased alphabetic scripts that read as "close to Latin".
+
+**What goes wrong if you ignore this.** Sentence-aware, recursive and structure-aware chunking pack whole units into each chunk. A unit that alone exceeds the budget cannot be packed, so it falls back to token windows, which cut mid-sentence and mid-word. Set `WithMaxTokenSize(64)` and you get clean one-sentence chunks in English; feed the same pipeline Hindi, where a typical sentence costs 4.8x more, and sentences start exceeding the budget on their own and come back fragmented. That is the fallback doing its job, not a detection failure. Sentence detection itself works across these scripts without configuration.
+
+**What to do.** Scale `maxTokens` by the multiplier for your corpus rather than reusing an English-derived value, and make sure the budget comfortably exceeds your longest single sentence in the target script. Sized that way, sentence-aware chunking reproduces sentence boundaries exactly in Chinese, Japanese, Hindi, Arabic, Hebrew, Urdu, Greek and Russian. Note that this is a budget concern only: no chunk ever exceeds `maxTokens`, in any script.
+
+#### Sizing against a non-OpenAI model
+
+`MicrosoftMLTokenizerAdapter` also accepts any `Microsoft.ML.Tokenizers.Tokenizer` instance, which covers the tokenizers behind the open embedding models: BERT and WordPiece for BGE and E5, SentencePiece for Nomic and Qwen, and the Llama family.
+
+```csharp
+using Microsoft.ML.Tokenizers;
+
+// BERT-based embedding models such as BGE and E5
+var bert = BertTokenizer.Create("vocab.txt", new BertOptions { LowerCaseBeforeTokenization = false });
+
+var pipeline = ChunkingPipeline.CreateBuilder()
+    .UseTokenizer(new MicrosoftMLTokenizerAdapter(bert))
+    .UseSplitter(s => s
+        .WithSentenceAwareChunking()
+        .WithMaxTokenSize(512))
+    .Build();
+```
+
+```csharp
+// SentencePiece models such as Nomic and Qwen, and the Llama family
+using var model = File.OpenRead("tokenizer.model");
+var tokenizer = new MicrosoftMLTokenizerAdapter(SentencePieceTokenizer.Create(model));
+```
+
+**Check the round trip before you index anything with it.** FluentChunker decodes token runs both to find legal cut points and to measure how far a chunk extends in the source, so it requires a tokenizer whose `Decode` reproduces the encoded text exactly. A tokenizer that normalises text still counts tokens correctly, but chunk boundaries are then derived from decoded lengths that drift from the source.
+
+**FluentChunker throws `InvalidOperationException` when that drift changes the decoded length, instead of returning truncated output.** The table below is the behaviour that guard exists to prevent, measured against a `BertTokenizer` whose vocabulary did not cover the text, on a 185-character document at an 8-token budget:
+
+| | Shipped `cl100k_base` | Normalising tokenizer, before the guard |
+|---|---|---|
+| Chunks produced | 5 | 2 |
+| Longest chunk | 42 chars | 180 chars |
+| Characters never emitted | 0 | 4, the end of the document |
+| Chunks reassemble to the source | Yes | No |
+
+That column now throws rather than returning those chunks. Note what did **not** fail while it was silent: `document.Substring(chunk.SourceStart, chunk.SourceLength) == chunk.Text` held for every chunk in both runs. The offsets stay internally consistent, so the obvious sanity check passes on truncated output, and no inspection of the chunks reveals the problem.
+
+**Run the round trip anyway.** The guard compares decoded lengths, so a normalisation that preserves length passes it: BERT lowercasing plain ASCII produces correct chunks and correctly does not throw, but the same tokenizer meeting one out-of-vocabulary word does. The guard turns a silent failure into a loud one at chunking time; the round trip tells you before you get there.
+
+Paste this into your own project and run it over a representative sample of your corpus:
+
+```csharp
+static string? FindRoundTripFailure(ITokenizer tokenizer, IEnumerable<string> corpus)
+{
+    foreach (var text in corpus)
+    {
+        if (tokenizer.Decode(tokenizer.Encode(text)) != text)
+            return text;
+    }
+
+    return null; // every sample survived the round trip
+}
+```
+
+The failure is not hypothetical. Two common causes, both reproducible with `BertTokenizer`:
+
+| Cause | Effect on `Decode(Encode(text))` |
+|---|---|
+| `LowerCaseBeforeTokenization`, on by default for BERT | `"The state of a program."` comes back as `"the state of a program."` |
+| A word missing from the vocabulary | That word comes back as `"[UNK]"` |
+
+The first is why the example above sets `LowerCaseBeforeTokenization = false`. The second cannot be configured away: it depends on your text matching the model's vocabulary, which is exactly what the check above measures. SentencePiece and Llama tokenizers carry their own normalisation, so run the check for those too. `cl100k_base`, the encoding FluentChunker ships, round-trips exactly and is covered by the test suite.
 
 ### Custom Tokenizers
 
@@ -311,11 +406,8 @@ public class CustomTokenizer : ITokenizer
 
     public string Decode(IReadOnlyList<int> tokens) => /* your detokenization */;
 
-    public int CountTokens(string text)
-    {
-        // Efficiently count tokens without materializing the full list
-        return Encode(text).Count;
-    }
+    // Called once per candidate chunk, so count directly rather than building the token list when your tokenizer can.
+    public int CountTokens(string text) => /* your token count */;
 }
 
 var tokenizer = new CustomTokenizer();
@@ -381,6 +473,7 @@ Implement to use custom tokenization:
 - .NET 8.0 or later (the package targets `net8.0` and `net10.0`)
 - Microsoft.ML.Tokenizers 2.0.0 or later, with the `cl100k_base` data package (included as dependencies)
 - Markdig 1.3.2 or later (included as dependency; used by structure-aware chunking)
+- Microsoft.Bcl.Memory 10.0.10 or later (included as dependency)
 
 ## Development
 

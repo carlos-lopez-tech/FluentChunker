@@ -8,10 +8,8 @@ namespace FluentChunker.Chunkers.StructureAware
     /// <summary>
     /// Splits Markdown documents along their explicit structure.
     /// Every heading starts a new section and sections are hard boundaries: a chunk never spans two sections.
-    /// Blocks inside a section are packed greedily up to the token budget;
-    /// atomic blocks (code fences, tables, lists, quotes) are never split while they fit.
-    /// An oversized paragraph descends to whole sentences;
-    /// an oversized atomic block or single sentence falls back to evenly balanced token windows.
+    /// Blocks inside a section are packed greedily up to the token budget; atomic blocks (code fences, tables, lists, quotes) are never split while they fit.
+    /// An oversized paragraph descends to whole sentences; an oversized atomic block or single sentence falls back to evenly balanced token windows.
     /// Every chunk carries its heading path in <c>Metadata["headingPath"]</c> (empty for content before the first heading).
     /// This strategy applies no overlap: <c>OverlapCount</c> is always 0.
     /// Plain text without Markdown structure degrades gracefully to paragraph packing.
@@ -22,7 +20,7 @@ namespace FluentChunker.Chunkers.StructureAware
         private const string HeadingPathSeparator = " > ";
 
         // The two levels the packer works on inside a section.
-        // Blocks descend to sentences (paragraphs only); sentences have no smaller structure and fall back to token windows.
+        // Blocks descend to sentences (paragraphs only), sentences have no smaller structure and fall back to token windows.
         private enum Tier { Blocks, Sentences }
 
         private readonly ITokenizer _tokenizer = tokenizer;
@@ -57,7 +55,13 @@ namespace FluentChunker.Chunkers.StructureAware
         // Packs one run of same-level units into chunks.
         // Because every section is packed independently, a chunk can never span two sections: headings are hard seams.
         // A unit that alone exceeds the budget is flushed around and descended into, so units on opposite sides of it never share a chunk.
-        private void PackRun(string text, IReadOnlyList<SectionBlock> units, Tier tier, ChunkMetadata sectionMetadata, List<Chunk> chunks, ref int index)
+        private void PackRun(
+            string text, 
+            IReadOnlyList<SectionBlock> units, 
+            Tier tier, 
+            ChunkMetadata sectionMetadata, 
+            List<Chunk> chunks, 
+            ref int index)
         {
             var tokenCounts = CountUnitTokens(text, units);
             var buffer = new List<int>();
@@ -89,10 +93,15 @@ namespace FluentChunker.Chunkers.StructureAware
             FlushChunk(text, units, buffer, sectionMetadata, chunks, ref index);
         }
 
-        // An oversized atomic unit (heading, fence, table, list, quote) has nothing semantic to descend into; an oversized sentence has no smaller level left.
+        // An oversized atomic unit (heading, fence, table, list, quote) has nothing semantic to descend into, an oversized sentence has no smaller level left.
         // Both go straight to token windows.
         // Only an oversized paragraph descends to its sentences.
-        private void Descend(string text, SectionBlock unit, Tier tier, ChunkMetadata sectionMetadata, List<Chunk> chunks, ref int index)
+        private void Descend(
+            string text, 
+            SectionBlock unit, 
+            Tier tier, 
+            ChunkMetadata sectionMetadata, 
+            List<Chunk> chunks, ref int index)
         {
             if (tier == Tier.Sentences || unit.IsAtomic)
             {
@@ -104,8 +113,7 @@ namespace FluentChunker.Chunkers.StructureAware
                 chunks, ref index);
         }
 
-        // SentenceSplitter works on a standalone string whose positions start at 0, but this paragraph sits inside the document.
-        // Split a copy of just this paragraph, then shift every returned position so the spans point back into the original document.
+        // See SplitSentences in RecursiveChunker: the paragraph is split as a standalone copy, then every returned position is shifted by its offset to point back into the document.
         private IReadOnlyList<SectionBlock> SplitSentences(string text, SentenceSpan paragraph)
         {
             var slice = text.Substring(paragraph.Start, paragraph.Length);
@@ -123,9 +131,7 @@ namespace FluentChunker.Chunkers.StructureAware
             return mapped;
         }
 
-        // Counts the tokens of each unit, budgeting for the worse of the two positions it can occupy.
-        // A unit in the middle of a chunk is sliced together with the whitespace before it, but a unit that begins a chunk is sliced from its own start and loses that whitespace.
-        // Dropping a leading space can raise the count instead of lowering it, because BPE encodes a space-prefixed word more cheaply than a bare one, so only the larger of the two counts keeps a packed chunk inside the budget.
+        // See CountSentenceTokens in SentenceAwareChunker: each unit is budgeted against the worse of the two positions it can occupy, because dropping the whitespace before it can raise its token count rather than lower it.
         private int[] CountUnitTokens(string text, IReadOnlyList<SectionBlock> units)
         {
             var tokenCounts = new int[units.Count];
@@ -151,7 +157,13 @@ namespace FluentChunker.Chunkers.StructureAware
             return tokenCounts;
         }
 
-        private void FlushChunk(string text, IReadOnlyList<SectionBlock> units, List<int> bufferedUnits, ChunkMetadata sectionMetadata, List<Chunk> chunks, ref int index)
+        private void FlushChunk(
+            string text, 
+            IReadOnlyList<SectionBlock> units, 
+            List<int> bufferedUnits, 
+            ChunkMetadata sectionMetadata, 
+            List<Chunk> chunks, 
+            ref int index)
         {
             if (bufferedUnits.Count == 0)
                 return;
@@ -163,15 +175,18 @@ namespace FluentChunker.Chunkers.StructureAware
             chunks.Add(CreateChunk(index++, chunkText, _tokenizer.CountTokens(chunkText), sectionMetadata, start, end - start));
         }
 
-        // A unit over budget with no smaller structure available is cut into evenly balanced token windows.
-        // Every boundary lands on a legal cut, so the windows concatenate back to the unit exactly.
-        // Extents are relative to the unit, so they are shifted by its start to point back into the document.
-        private void EmitTokenWindows(string text, SentenceSpan unit, ChunkMetadata sectionMetadata, List<Chunk> chunks, ref int index)
+        // See EmitOversizedSentence in SentenceAwareChunker: a unit with no smaller structure left is cut into evenly balanced windows that all land on legal cuts, with extents shifted by its start to point back into the document.
+        private void EmitTokenWindows(
+            string text, 
+            SentenceSpan unit, 
+            ChunkMetadata sectionMetadata, 
+            List<Chunk> chunks, 
+            ref int index)
         {
             var tokens = _tokenizer.Encode(text.Substring(unit.Start, unit.Length));
             var boundary = new TokenBoundary(_tokenizer, tokens);
 
-            foreach (var window in TokenWindows.Balanced(tokens.Count, _maxTokens, boundary))
+            foreach (var window in TokenWindows.Balanced(tokens.Count, unit.Length, _maxTokens, boundary))
             {
                 var sourceStart = unit.Start + window.CharStart;
 
@@ -180,8 +195,13 @@ namespace FluentChunker.Chunkers.StructureAware
             }
         }
 
-        private static Chunk CreateChunk(int index, string text, int tokenCount, ChunkMetadata sectionMetadata,
-            int sourceStart, int sourceLength) =>
+        private static Chunk CreateChunk(
+            int index, 
+            string text, 
+            int tokenCount, 
+            ChunkMetadata sectionMetadata,
+            int sourceStart, 
+            int sourceLength) =>
             new()
             {
                 Index = index,

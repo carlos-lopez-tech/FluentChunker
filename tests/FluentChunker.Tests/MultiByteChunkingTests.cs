@@ -4,8 +4,8 @@ namespace FluentChunker.Tests
 {
     public class MultiByteChunkingTests
     {
-        // Each document reaches a token-window fallback: the emoji and CJK runs have no sentence boundary
-        // the splitter recognises, so they arrive as a single oversized unit.
+        // Each document reaches a token-window fallback: the emoji and CJK runs have no sentence boundary the splitter recognises,
+        // so they arrive as a single oversized unit.
         private const string EmojiDocument = "Emoji run: 😀😃😄😁😆😅🤣😂🙂🙃 and more 🎉🎊🎈 all in one very long stretch without any break at all";
         private const string ChineseDocument = "这是第一句话。这是第二句话。这是第三句话。这是第四句话。这是第五句话。这是第六句话。";
         private const string MixedDocument = "混合 text 日本語のテキスト العربية עברית ไทย देवनागरी mixed together in one long run with no break";

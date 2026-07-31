@@ -146,7 +146,7 @@ namespace FluentChunker.Chunkers.SentenceAware
             var tokens = _tokenizer.Encode(text.Substring(sentence.Start, sentence.Length));
             var boundary = new TokenBoundary(_tokenizer, tokens);
 
-            foreach (var window in TokenWindows.Balanced(tokens.Count, _maxTokens, boundary))
+            foreach (var window in TokenWindows.Balanced(tokens.Count, sentence.Length, _maxTokens, boundary))
             {
                 var sourceStart = sentence.Start + window.CharStart;
 
@@ -162,8 +162,12 @@ namespace FluentChunker.Chunkers.SentenceAware
             }
         }
 
-        private void FlushChunk(string text, IReadOnlyList<SentenceSpan> sentences,
-            List<int> chunkSentences, int overlapCount, List<Chunk> chunks, ref int index)
+        private void FlushChunk(
+            string text, 
+            IReadOnlyList<SentenceSpan> sentences,
+            List<int> chunkSentences, 
+            int overlapCount, 
+            List<Chunk> chunks, ref int index)
         {
             if (chunkSentences.Count == 0)
                 return;

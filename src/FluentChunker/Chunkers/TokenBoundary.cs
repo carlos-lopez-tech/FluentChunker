@@ -8,6 +8,9 @@ namespace FluentChunker.Chunkers
     //
     // A cut is legal exactly when decoding the two sides separately produces the same text as decoding them together.
     // That test needs only ITokenizer, so custom tokenizers are protected too, and unlike scanning for U+FFFD it does not misfire on a document that already contains that character.
+    //
+    // Every method here assumes the tokenizer round-trips, and nothing here verifies it.
+    // That post-condition lives in the TokenWindows layouts, so a future strategy deriving extents from CharLengthOf without going through them must bring its own.
     internal sealed class TokenBoundary(ITokenizer tokenizer, IReadOnlyList<int> tokens)
     {
         /// <summary>
@@ -77,8 +80,7 @@ namespace FluentChunker.Chunkers
         }
 
         // Character length of a token run, used to turn token windows into character extents.
-        // Exact only between legal cuts, which is where the layouts place every boundary:
-        // lengths add across a legal cut precisely because decoding the two sides separately gives the same text as decoding them together.
+        // Exact only between legal cuts, which is where the layouts place every boundary: lengths add across a legal cut precisely because decoding the two sides separately gives the same text as decoding them together.
         internal int CharLengthOf(int start, int length) =>
             _tokenizer.Decode(TokenWindows.Slice(_tokens, start, length)).Length;
     }

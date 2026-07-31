@@ -64,8 +64,8 @@ namespace FluentChunker
 
             /// <summary>
             /// Splits Markdown at its headings.
-            /// Sections are hard boundaries:
-            /// a chunk never spans two, and each one carries its heading path (e.g. <c>"Guide > Setup"</c>) in <c>Chunk.Metadata["headingPath"]</c>, a key reserved for this strategy.
+            /// Sections are hard boundaries: a chunk never spans two,
+            /// and each one carries its heading path (e.g. <c>"Guide > Setup"</c>) in <c>Chunk.Metadata["headingPath"]</c>, a key reserved for this strategy.
             /// Code fences, tables, lists and quotes stay atomic while they fit the budget; an oversized paragraph descends to sentences.
             /// Text without Markdown structure degrades to paragraph packing with an empty heading path.
             /// Applies no overlap by design.
@@ -130,7 +130,8 @@ namespace FluentChunker
                 /// </summary>
                 /// <param name="maxTokens">The chunk size limit in tokens.
                 /// Must be at least 4, the most tokens a single character can span, since a character is never split across chunks.
-                /// No chunk ever exceeds this limit.</param>
+                /// No chunk ever exceeds this limit.
+                /// Non-Latin scripts cost roughly 2x to 5x more tokens for the same content, so a budget derived from English text leaves whole sentences oversized and falls back to token windows; see the README for the per-script multipliers.</param>
                 /// <returns>The final step, where overlap and abbreviations can optionally be configured.</returns>
                 /// <exception cref="ArgumentOutOfRangeException"><paramref name="maxTokens"/> is less than 4.</exception>
                 public MaxTokenSizeStep WithMaxTokenSize(int maxTokens)
@@ -200,7 +201,8 @@ namespace FluentChunker
                 /// </summary>
                 /// <param name="maxTokens">The chunk size limit in tokens.
                 /// Must be at least 4, the most tokens a single character can span, since a character is never split across chunks.
-                /// No chunk ever exceeds this limit.</param>
+                /// No chunk ever exceeds this limit.
+                /// Non-Latin scripts cost roughly 2x to 5x more tokens for the same content, so a budget derived from English text leaves whole sentences oversized and falls back to token windows; see the README for the per-script multipliers.</param>
                 /// <returns>The final step.
                 /// Structure-aware chunking has no overlap, so it offers only abbreviations, no <c>WithOverlap</c>.</returns>
                 /// <exception cref="ArgumentOutOfRangeException"><paramref name="maxTokens"/> is less than 4.</exception>

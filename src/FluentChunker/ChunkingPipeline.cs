@@ -186,8 +186,7 @@ namespace FluentChunker
         /// Configures how documents are split into chunks: the chunking strategy,
         /// maximum chunk size in tokens, and optional overlap.
         /// </summary>
-        /// <param name="buildSplitterAction">Configures the splitter, e.g.
-        /// <c>s => s.WithSentenceAwareChunking().WithMaxTokenSize(200).WithOverlap(20)</c>.</param>
+        /// <param name="buildSplitterAction">Configures the splitter, e.g. <c>s => s.WithSentenceAwareChunking().WithMaxTokenSize(200).WithOverlap(20)</c>.</param>
         /// <returns>The optional step, from which the pipeline can be built.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="buildSplitterAction"/> is null.</exception>
         IOptionalStep UseSplitter(Action<Splitter.Builder> buildSplitterAction);

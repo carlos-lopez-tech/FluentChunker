@@ -5,9 +5,8 @@ namespace FluentChunker.Tests
 {
     public class ChunkSourceOffsetTests
     {
-        // Each document targets a different path: ASCII prose packs structurally, the Markdown one exercises
-        // sections and atomic blocks, and the two multi-byte runs have no boundary the splitter recognises
-        // so they reach the token-window fallbacks.
+        // Each document targets a different path: ASCII prose packs structurally, the Markdown one exercises sections and atomic blocks,
+        // and the two multi-byte runs have no boundary the splitter recognises so they reach the token-window fallbacks.
         private const string Prose = "First sentence here. Second one follows. Third wraps it up.\n\nNew paragraph starts. And it ends here after a while.";
         private const string Markdown = "# Guide\n\nIntro text goes here.\n\n## Setup\n\nInstall it first.\n\n```bash\nnpm install\n```\n\n## Usage\n\nRun it, then read the output carefully.";
         private const string ChineseRun = "这是第一句话。这是第二句话。这是第三句话。这是第四句话。这是第五句话。";

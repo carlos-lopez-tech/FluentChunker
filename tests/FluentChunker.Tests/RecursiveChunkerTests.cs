@@ -13,8 +13,7 @@ namespace FluentChunker.Tests
         private const string ThreeParagraphs =
             ParagraphOne + "\n\n" + ParagraphTwo + "\n\n" + ParagraphThree;
 
-        // One paragraph of three lines (~11 tokens each, ~33 total):
-        // oversized for a 15-token budget, while each line alone fits it and no two lines fit together.
+        // One paragraph of three lines (~11 tokens each, ~33 total): oversized for a 15-token budget, while each line alone fits it and no two lines fit together.
         private const string LineOne = "The first note mentioned retrieval quality and chunk overlap.";
         private const string LineTwo = "The second note compared embedding models and search recall.";
         private const string LineThree = "The third note reviewed metadata filters and reranking stages.";

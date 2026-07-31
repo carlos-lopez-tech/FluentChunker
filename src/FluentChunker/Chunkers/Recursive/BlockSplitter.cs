@@ -3,14 +3,12 @@ using FluentChunker.Chunkers.SentenceAware;
 namespace FluentChunker.Chunkers.Recursive
 {
     // Splits text into paragraphs (separated by blank lines) or into single lines.
-    // RecursiveChunker uses these two levels:
-    // it breaks a document into paragraphs, and when a paragraph is too large it breaks that paragraph into lines.
-    // 
+    // RecursiveChunker uses these two levels: it breaks a document into paragraphs, and when a paragraph is too large it breaks that paragraph into lines.
+    //
     // Both methods take a (start, length) window into the original string and return the positions of each block as SentenceSpan(Start, Length) values that point straight back into that same string.
-    // Nothing is copied or substring'd, and the returned positions are in the original string's coordinates - so the caller can slice the block out with text[span.Start .. span.End] and get the exact original bytes back.
-    // 
-    // Each returned span is trimmed so it begins and ends on real content:
-    // leading and trailing whitespace (blank lines between paragraphs, a trailing '\r' before a '\n', indentation) is left outside the span.
+    // Nothing is copied or substring'd, and the returned positions are in the original string's coordinates, so the caller can slice the block out of the original string using a span's start and end and get the exact original bytes back.
+    //
+    // Each returned span is trimmed so it begins and ends on real content: leading and trailing whitespace (blank lines between paragraphs, a trailing '\r' before a '\n', indentation) is left outside the span.
     // That way a chunk built from these spans never starts or ends on stray separator whitespace.
     internal static class BlockSplitter
     {
@@ -22,8 +20,8 @@ namespace FluentChunker.Chunkers.Recursive
             var paragraphEnd = -1;     // one past the last content char seen in the current paragraph
             var lineStart = start;
 
-            // Iterate line by line; a whitespace-only line ends the current paragraph.
-            // This makes \r\n handling automatic ('\r' is whitespace and is trimmed like any other).
+            // A whitespace-only line ends the current paragraph.
+            // Iterating line by line makes \r\n handling automatic ('\r' is whitespace and is trimmed like any other).
             for (var i = start; i <= end; i++)
             {
                 if (i != end && text[i] != '\n')

@@ -41,7 +41,7 @@ namespace FluentChunker.Chunkers.FixedSize
             // OverlapCount is set from the window rather than _overlap,
             // so callers relying on it to reconstruct shared context see what the chunk actually contains.
             // The window's character extent selects the same text the tokens decode to, which lets the chunk be a verbatim source slice.
-            foreach (var window in TokenWindows.Strided(allTokens.Count, _maxTokens, _overlap, boundary))
+            foreach (var window in TokenWindows.Strided(allTokens.Count, text.Length, _maxTokens, _overlap, boundary))
             {
                 chunks.Add(new Chunk
                 {

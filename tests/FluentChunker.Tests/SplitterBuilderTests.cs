@@ -154,8 +154,7 @@ namespace FluentChunker.Tests
         }
 
         // At MaxTokenSize(6), "Vgl." (3 tokens) and " Abschnitt 3 im Buch." (6 tokens, gap-inclusive) don't fit together (3+6 > 6), so without the abbreviation guard the splitter treats "Vgl." as its own sentence and the first chunk is exactly "Vgl.".
-        // Registering "Vgl" as an abbreviation suppresses that false break, merging it into "Vgl.
-        // Abschnitt 3 im Buch." (9 tokens) which then no longer fits the 6-token budget as a single unit and falls back to fixed-size windowing - proving the guard changed the chunker's actual segmentation.
+        // Registering "Vgl" as an abbreviation suppresses that false break, merging it into "Vgl. Abschnitt 3 im Buch." (9 tokens) which then no longer fits the 6-token budget as a single unit and falls back to fixed-size windowing, proving the guard changed the chunker's actual segmentation.
         [Test]
         public void UseSplitter_CustomAbbreviationConfigured_SuppressesMatchingSentenceBreak()
         {

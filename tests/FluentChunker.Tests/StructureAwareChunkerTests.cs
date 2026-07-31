@@ -10,8 +10,7 @@ namespace FluentChunker.Tests
         private const string ParagraphTwo = "The group compared results from the two search systems.";
         private const string ParagraphThree = "The notes described how context changed across the chunks.";
 
-        // Two flat sections that easily fit a 100-token budget individually AND combined:
-        // only a hard seam at the second heading explains getting two chunks out of them.
+        // Two flat sections that easily fit a 100-token budget individually AND combined: only a hard seam at the second heading explains getting two chunks out of them.
         private const string TwoSectionDocument =
             "## Retrieval Notes\n\n" + ParagraphOne + "\n\n" +
             "## Ranking Results\n\n" + ParagraphTwo;
@@ -385,8 +384,7 @@ namespace FluentChunker.Tests
             }
         }
 
-        // At maxTokens 6, "Vgl.
-        // Abschnitt 3 im Buch." only stays together when "Vgl" is registered as an abbreviation; without the guard the first sentence chunk is exactly "Vgl." (same proven sizing as the sentence-aware builder test).
+        // At maxTokens 6, "Vgl. Abschnitt 3 im Buch." only stays together when "Vgl" is registered as an abbreviation; without the guard the first sentence chunk is exactly "Vgl." (same proven sizing as the sentence-aware builder test).
         [Test]
         public void Chunk_CustomAbbreviation_SuppressesFalseSentenceBreakDuringDescent()
         {

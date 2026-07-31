@@ -7,13 +7,86 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Chunk against the tokenizer your embedding model actually uses.** `MicrosoftMLTokenizerAdapter`
+  now accepts any `Microsoft.ML.Tokenizers.Tokenizer` instance, not only a tiktoken encoding name.
+  Sizing chunks against the model that consumes them is the whole point of counting tokens rather
+  than characters, and until now only OpenAI models could be sized accurately. This opens the
+  tokenizers behind the open embedding models: **BERT and WordPiece** for BGE and E5,
+  **SentencePiece** for Nomic and Qwen, and the **Llama** family.
+
+  ```csharp
+  using Microsoft.ML.Tokenizers;
+
+  var bert = BertTokenizer.Create("vocab.txt", new BertOptions { LowerCaseBeforeTokenization = false });
+
+  var pipeline = ChunkingPipeline.CreateBuilder()
+      .UseTokenizer(new MicrosoftMLTokenizerAdapter(bert))
+      .UseSplitter(s => s
+          .WithSentenceAwareChunking()
+          .WithMaxTokenSize(512))
+      .Build();
+  ```
+
+  The existing `MicrosoftMLTokenizerAdapter(string)` constructor is unchanged, and `cl100k_base`
+  remains the only encoding shipped in the box.
+
+  **One caller contract comes with it:** the tokenizer's `Decode` must reproduce the encoded text
+  exactly, because safe cut detection and chunk extents are both derived by decoding token runs. BERT
+  lowercases by default and any out-of-vocabulary word decodes as `[UNK]`, either of which breaks it.
+  Run the round-trip check from the README against your own corpus before indexing; the guard under
+  **Fixed** catches the corrupting cases at chunking time if you do not. The shipped `cl100k_base`
+  path round-trips exactly and the suite now asserts that directly, across Latin, Cyrillic, Greek,
+  CJK, Indic, Arabic, Hebrew, Thai and emoji text.
+
+### Changed
+
+- **Non-Latin scripts cost 2x to 5x more tokens, and the README now says so.** 1.1.0 made sentence
+  detection work for Chinese, Japanese, Hindi, Arabic, Hebrew, Thai and more, but a `maxTokens` value
+  chosen against English is too small for those scripts, so sentences exceed the budget on their own
+  and fall through to the token-window fallback. The output looks like a detection bug and is not
+  one. The **Tokenizers** section now carries the measured per-script multipliers, explains the
+  fallback, and says to scale the budget. Greek and Russian are in the table too, at 3.9x and 2.1x,
+  because both are easy to assume are Latin-priced. `WithMaxTokenSize` points at the section.
+
+### Fixed
+
+- **A tokenizer that did not round-trip silently dropped the end of every document.** Chunk positions
+  are derived by decoding token runs, so a tokenizer whose `Decode` returned fewer characters than it
+  was given made the character extents fall progressively short of the source while the loop still
+  consumed every token. The tail was never emitted, chunks ran far past the token budget, and nothing
+  threw or warned. Measured on a `BertTokenizer` with an incomplete vocabulary: a 185-character
+  document at an 8-token budget lost its last 4 characters and produced a 180-character chunk. **Every
+  chunking strategy was affected, with and without overlap.** The failure was undetectable from the
+  output, because `document.Substring(chunk.SourceStart, chunk.SourceLength) == chunk.Text` held for
+  every chunk throughout: the offsets stayed self-consistent while describing a shrinking picture of
+  the document. Chunking now throws `InvalidOperationException` naming the tokenizer as the cause when
+  the decoded length of a unit does not match its source.
+
+  **Drift in the other direction crashed with an unhelpful exception.** When a tokenizer decodes to
+  *more* characters than it was given, the chunk extents run past the end of the document and the
+  failure surfaced as `ArgumentOutOfRangeException` from `String.Substring`, naming nothing the
+  reader could act on. This is reachable at defaults, not in theory: `BertTokenizer` inserts a
+  separator between CJK characters unless `IndividuallyTokenizeCjk` is set to `false`. Measured on a
+  real `BertTokenizer` over an 18-character Chinese document, decode returned 35 characters and all
+  four strategies threw. Both drift directions now produce the same actionable exception, and the
+  message names `IndividuallyTokenizeCjk` among the causes, since it is the one that is a settable
+  option rather than a property of your corpus.
+
+  **A pipeline that appeared to work may now throw.** That reveals a pre-existing defect rather than
+  causing a new one: the previous output was silently truncated, and nothing can legitimately depend
+  on that. The check is a net-length comparison per encoded unit, so a normalisation that preserves
+  length, such as BERT lowercasing plain ASCII, keeps producing correct chunks and deliberately does
+  not throw. The round-trip check in the README remains the stronger, earlier discipline.
+
 ## [1.2.0] - 2026-07-27
 
-### ⚠ Breaking
+### Breaking
 
 - **`Chunk.Metadata` is now an immutable `ChunkMetadata` instead of `Dictionary<string, JsonElement>`.**
   A breaking change ships in a minor version here as a deliberate, one-time exception: the library
-  is days old, and this is the last moment the fix is nearly free. Reading is unchanged —
+  is days old, and this is the last moment the fix is nearly free. Reading is unchanged:
   `ChunkMetadata` implements `IReadOnlyDictionary<string, JsonElement>`, so indexers, `TryGetValue`,
   `Count`, enumeration and LINQ all keep compiling. The one migration is in-place writes:
 
@@ -30,12 +103,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Chunks are value objects, for real.** `Chunk` is a `record`, which always promised value
-  equality — but the mutable metadata dictionary compared by reference, so no two chunks were ever
+  equality, but the mutable metadata dictionary compared by reference, so no two chunks were ever
   equal, silently breaking `Distinct()`, `HashSet<Chunk>`, chunk-keyed caches and test assertions.
   With metadata immutable, the compiler-generated equality is correct: deduplication before
   embedding, caching by chunk and whole-chunk assertions now work. Metadata participates in
   equality and hashing, so same-text chunks tagged with different `Source` values stay distinct.
-- **`ChunkMetadata`** — immutable, value-equal metadata map. `ChunkMetadata.Empty` is a shared
+- **`ChunkMetadata`**: immutable, value-equal metadata map. `ChunkMetadata.Empty` is a shared
   singleton; `With<T>(key, value)` returns a new instance with an entry added or replaced. Keys are
   ordinal; values compare by raw JSON text (stricter than semantic equality, identical on both
   target frameworks; documented on the type).
@@ -46,7 +119,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of allocating a dictionary each; the pipeline builds the merged pipeline+document metadata once
   per call and shares it across chunks; structure-aware chunking builds one metadata instance per
   section instead of one dictionary per chunk. `with` expressions share the immutable instance
-  instead of aliasing a mutable one — the copy-mutates-the-original defect is gone by construction.
+  instead of aliasing a mutable one, so the copy-mutates-the-original defect is gone by construction.
 
 ## [1.1.0] - 2026-07-26
 
@@ -79,6 +152,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.2] - 2026-07-26
 
+### Changed
+
+- **A max token size below 4 is now rejected** with `ArgumentOutOfRangeException` instead of being
+  accepted and silently overrun. A single character can span up to 4 tokens under `cl100k_base` and
+  is never split across chunks, so a smaller budget could not be honoured. The 4-token bound was
+  verified by encoding all 1,112,032 Unicode characters: none needs more, with or without a preceding
+  space. Together with the packing fix below, **no chunk can now exceed the max token size, for any
+  input, under any strategy.**
+
 ### Fixed
 
 - **Token windows no longer split a character in half.** Fixed-size chunking, and the fallback that
@@ -99,15 +181,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   raised the count the packer had already budgeted for. Each unit is now measured in both positions
   and budgeted at the larger of the two. The overrun needed the unit's cost to coincide exactly with
   the budget, so it was rare in practice, but it was unbounded in principle.
-
-### Changed
-
-- **A max token size below 4 is now rejected** with `ArgumentOutOfRangeException` instead of being
-  accepted and silently overrun. A single character can span up to 4 tokens under `cl100k_base` and
-  is never split across chunks, so a smaller budget could not be honoured. The 4-token bound was
-  verified by encoding all 1,112,032 Unicode characters: none needs more, with or without a preceding
-  space. Together with the packing fix above, **no chunk can now exceed the max token size, for any
-  input, under any strategy.**
 
 ## [1.0.0] - 2026-07-25
 

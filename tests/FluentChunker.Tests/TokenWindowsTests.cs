@@ -23,7 +23,7 @@ namespace FluentChunker.Tests
             var boundary = new TokenBoundary(_tokenizer, tokens);
 
             // Act
-            var windows = TokenWindows.Strided(tokens.Count, maxTokens: 5, overlap: 0, boundary).ToList();
+            var windows = TokenWindows.Strided(tokens.Count, Ascii.Length, maxTokens: 5, overlap: 0, boundary).ToList();
 
             // Assert
             Assert.That(windows, Is.Not.Empty);
@@ -44,7 +44,7 @@ namespace FluentChunker.Tests
             var boundary = new TokenBoundary(_tokenizer, tokens);
 
             // Act
-            var windows = TokenWindows.Strided(tokens.Count, maxTokens: 6, overlap: 2, boundary).ToList();
+            var windows = TokenWindows.Strided(tokens.Count, Ascii.Length, maxTokens: 6, overlap: 2, boundary).ToList();
 
             // Assert
             Assert.That(windows, Has.Count.GreaterThan(1));
@@ -64,7 +64,7 @@ namespace FluentChunker.Tests
             var boundary = new TokenBoundary(_tokenizer, tokens);
 
             // Act
-            var windows = TokenWindows.Strided(tokens.Count, maxTokens: 5, overlap: 0, boundary).ToList();
+            var windows = TokenWindows.Strided(tokens.Count, MultiByte.Length, maxTokens: 5, overlap: 0, boundary).ToList();
 
             // Assert
             var illegal = windows.Where(w => !boundary.IsSafeCut(w.Start) || !boundary.IsSafeCut(w.Start + w.Length)).ToList();
@@ -80,7 +80,7 @@ namespace FluentChunker.Tests
 
             // Act
             var text = string.Concat(TokenWindows
-                .Strided(tokens.Count, maxTokens: 5, overlap: 0, boundary)
+                .Strided(tokens.Count, MultiByte.Length, maxTokens: 5, overlap: 0, boundary)
                 .Select(w => _tokenizer.Decode(TokenWindows.Slice(tokens, w.Start, w.Length))));
 
             // Assert
@@ -95,7 +95,7 @@ namespace FluentChunker.Tests
             var boundary = new TokenBoundary(_tokenizer, tokens);
 
             // Act
-            var windows = TokenWindows.Balanced(tokens.Count, maxTokens: 6, boundary).ToList();
+            var windows = TokenWindows.Balanced(tokens.Count, MultiByte.Length, maxTokens: 6, boundary).ToList();
 
             // Assert
             var illegal = windows.Where(w => !boundary.IsSafeCut(w.Start) || !boundary.IsSafeCut(w.Start + w.Length)).ToList();
@@ -111,7 +111,7 @@ namespace FluentChunker.Tests
 
             // Act
             var text = string.Concat(TokenWindows
-                .Balanced(tokens.Count, maxTokens: 6, boundary)
+                .Balanced(tokens.Count, MultiByte.Length, maxTokens: 6, boundary)
                 .Select(w => _tokenizer.Decode(TokenWindows.Slice(tokens, w.Start, w.Length))));
 
             // Assert
@@ -131,7 +131,7 @@ namespace FluentChunker.Tests
             var boundary = new TokenBoundary(_tokenizer, tokens);
 
             // Act
-            var windows = TokenWindows.Balanced(tokens.Count, maxTokens, boundary).ToList();
+            var windows = TokenWindows.Balanced(tokens.Count, MultiByte.Length, maxTokens, boundary).ToList();
 
             // Assert
             Assert.That(windows.Select(w => w.Length), Has.All.LessThanOrEqualTo(maxTokens));
@@ -145,7 +145,7 @@ namespace FluentChunker.Tests
             var boundary = new TokenBoundary(_tokenizer, tokens);
 
             // Act
-            var windows = TokenWindows.Balanced(tokens.Count, maxTokens: 1, boundary).ToList();
+            var windows = TokenWindows.Balanced(tokens.Count, MultiByte.Length, maxTokens: 1, boundary).ToList();
             var text = string.Concat(windows.Select(w => _tokenizer.Decode(TokenWindows.Slice(tokens, w.Start, w.Length))));
 
             // Assert
@@ -169,7 +169,7 @@ namespace FluentChunker.Tests
             var allowedWindows = (tokens.Count + MaxTokens - 1) / MaxTokens;
 
             // Act
-            var windows = TokenWindows.Balanced(tokens.Count, MaxTokens, boundary).ToList();
+            var windows = TokenWindows.Balanced(tokens.Count, MultiByte.Length, MaxTokens, boundary).ToList();
 
             // Assert
             Assert.That(windows, Has.Count.EqualTo(allowedWindows));
@@ -184,7 +184,7 @@ namespace FluentChunker.Tests
             var boundary = new TokenBoundary(_tokenizer, tokens);
 
             // Act
-            var windows = TokenWindows.Balanced(tokens.Count, maxTokens: 5, boundary).ToList();
+            var windows = TokenWindows.Balanced(tokens.Count, MultiByte.Length, maxTokens: 5, boundary).ToList();
 
             // Assert
             Assert.That(windows[^1].Length, Is.GreaterThan(1));
@@ -197,7 +197,7 @@ namespace FluentChunker.Tests
             var boundary = new TokenBoundary(_tokenizer, []);
 
             // Act
-            var windows = TokenWindows.Balanced(totalTokens: 0, maxTokens: 10, boundary).ToList();
+            var windows = TokenWindows.Balanced(totalTokens: 0, expectedCharLength: 0, maxTokens: 10, boundary).ToList();
 
             // Assert
             Assert.That(windows, Is.Empty);
@@ -211,7 +211,7 @@ namespace FluentChunker.Tests
             var boundary = new TokenBoundary(_tokenizer, tokens);
 
             // Act
-            var windows = TokenWindows.Strided(tokens.Count, maxTokens: 5, overlap: 0, boundary).ToList();
+            var windows = TokenWindows.Strided(tokens.Count, Ascii.Length, maxTokens: 5, overlap: 0, boundary).ToList();
 
             // Assert
             Assert.That(windows, Is.Not.Empty);
@@ -234,7 +234,7 @@ namespace FluentChunker.Tests
 
             // Act
             var mismatched = TokenWindows
-                .Strided(tokens.Count, maxTokens, overlap: 2, boundary)
+                .Strided(tokens.Count, MultiByte.Length, maxTokens, overlap: 2, boundary)
                 .Where(w => MultiByte.Substring(w.CharStart, w.CharLength)
                             != _tokenizer.Decode(TokenWindows.Slice(tokens, w.Start, w.Length)))
                 .ToList();
@@ -254,7 +254,7 @@ namespace FluentChunker.Tests
 
             // Act
             var mismatched = TokenWindows
-                .Balanced(tokens.Count, maxTokens, boundary)
+                .Balanced(tokens.Count, MultiByte.Length, maxTokens, boundary)
                 .Where(w => MultiByte.Substring(w.CharStart, w.CharLength)
                             != _tokenizer.Decode(TokenWindows.Slice(tokens, w.Start, w.Length)))
                 .ToList();
@@ -271,7 +271,7 @@ namespace FluentChunker.Tests
             var boundary = new TokenBoundary(_tokenizer, tokens);
 
             // Act
-            var windows = TokenWindows.Balanced(tokens.Count, maxTokens: 6, boundary).ToList();
+            var windows = TokenWindows.Balanced(tokens.Count, MultiByte.Length, maxTokens: 6, boundary).ToList();
 
             // Assert
             Assert.That(windows, Has.Count.GreaterThan(1));

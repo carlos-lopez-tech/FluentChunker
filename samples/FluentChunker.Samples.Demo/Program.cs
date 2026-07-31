@@ -122,8 +122,7 @@ namespace FluentChunker.Samples.Demo
 
 
             // Example 5: Recursive Chunking descending into an oversized paragraph.
-            // A tight 30-token budget over the same archive/retrieval corpus:
-            // the short title paragraph fits and stays its own chunk (strict seam - never merged with its oversized neighbor),
+            // A tight 30-token budget over the same archive/retrieval corpus: the short title paragraph fits and stays its own chunk (strict seam, never merged with its oversized neighbor),
             // while the following paragraph alone blows the budget,
             // so the chunker descends paragraph -> lines -> sentences and packs whole sentences up to the budget (each sentence exceeds the 10-token overlap,
             // so no whole sentence is carried and OverlapCount stays 0).

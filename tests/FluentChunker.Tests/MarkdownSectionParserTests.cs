@@ -11,8 +11,7 @@ namespace FluentChunker.Tests
             "## Ranking Results\n\n" +
             "The group compared results from the two search systems.";
 
-        // Heading level jumps down two levels (h1 -> h3) and then back up to h2:
-        // the h3 entry must be popped from the path when the h2 arrives.
+        // Heading level jumps down two levels (h1 -> h3) and then back up to h2: the h3 entry must be popped from the path when the h2 arrives.
         private const string NestedHeadingsDocument =
             "# Archive Study\n\n" +
             "### Method Details\n\n" +
