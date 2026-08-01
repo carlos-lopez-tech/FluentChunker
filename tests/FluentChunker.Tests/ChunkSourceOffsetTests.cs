@@ -67,7 +67,7 @@ namespace FluentChunker.Tests
         [TestCase(30, 0)]
         [TestCase(30, 8)]
         [TestCase(64, 16)]
-        public void Chunk_EveryStrategyAndDocument_OffsetsSliceTheSourceBackToTheChunkText(int maxTokens, int overlap)
+        public async Task Chunk_EveryStrategyAndDocument_OffsetsSliceTheSourceBackToTheChunkText(int maxTokens, int overlap)
         {
             // Arrange
             var pipelines = PipelinesFor(maxTokens, overlap);
@@ -78,11 +78,11 @@ namespace FluentChunker.Tests
             {
                 foreach (var document in Documents)
                 {
-                    foreach (var chunk in pipeline.Chunk(document))
+                    foreach (var chunk in await pipeline.ChunkAsync(document).ToListAsync())
                     {
                         if (chunk.SourceStart < 0 || chunk.SourceLength < 0
                             || chunk.SourceStart + chunk.SourceLength > document.Length
-                            || document.Substring(chunk.SourceStart, chunk.SourceLength) != chunk.Text)
+                            || chunk.SliceOf(document) != chunk.Text)
                         {
                             violations.Add($"[{chunk.SourceStart},{chunk.SourceLength}] != {chunk.Text}");
                         }
@@ -97,7 +97,7 @@ namespace FluentChunker.Tests
         [TestCase(12)]
         [TestCase(30)]
         [TestCase(64)]
-        public void Chunk_EveryStrategyWithoutOverlap_OffsetsAdvanceMonotonically(int maxTokens)
+        public async Task Chunk_EveryStrategyWithoutOverlap_OffsetsAdvanceMonotonically(int maxTokens)
         {
             // Arrange - without overlap a later chunk can never start before an earlier one ends.
             var pipelines = PipelinesFor(maxTokens, overlap: 0);
@@ -108,7 +108,7 @@ namespace FluentChunker.Tests
             {
                 foreach (var document in Documents)
                 {
-                    var chunks = pipeline.Chunk(document);
+                    var chunks = await pipeline.ChunkAsync(document).ToListAsync();
                     for (var i = 1; i < chunks.Count; i++)
                     {
                         if (chunks[i].SourceStart < chunks[i - 1].SourceStart + chunks[i - 1].SourceLength)
@@ -122,7 +122,7 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Chunk_WithOverlap_ConsecutiveChunksReportOverlappingRanges()
+        public async Task Chunk_WithOverlap_ConsecutiveChunksReportOverlappingRanges()
         {
             // Arrange
             var pipeline = ChunkingPipeline.CreateBuilder().UseTokenizer(_tokenizer)
@@ -130,11 +130,55 @@ namespace FluentChunker.Tests
             var document = string.Join(" ", Enumerable.Repeat("A pragmatic developer chooses the simplest thing that works.", 10));
 
             // Act
-            var result = pipeline.Chunk(document);
+            var result = await pipeline.ChunkAsync(document).ToListAsync();
 
             // Assert
             Assert.That(result, Has.Count.GreaterThan(1));
             Assert.That(result[1].SourceStart, Is.LessThan(result[0].SourceStart + result[0].SourceLength));
+        }
+
+        [Test]
+        public void SliceOf_TrackedOffsets_ReturnsTextExactly()
+        {
+            // Arrange
+            var document = "The archive stores embeddings for retrieval.";
+            var chunk = new Chunk { Index = 0, Text = "embeddings", TokenCount = 1, SourceStart = 19, SourceLength = 10 };
+
+            // Act
+            var slice = chunk.SliceOf(document);
+
+            // Assert
+            Assert.That(slice, Is.EqualTo(chunk.Text));
+        }
+
+        [Test]
+        public void SliceOf_UntrackedSourceStart_ThrowsInvalidOperationException()
+        {
+            // Arrange
+            var chunk = new Chunk { Index = 0, Text = "chunk", TokenCount = 1, SourceStart = -1, SourceLength = 5 };
+
+            // Act & Assert
+            Assert.Throws<InvalidOperationException>(() => chunk.SliceOf("The retrieval corpus."));
+        }
+
+        [Test]
+        public void SliceOf_UntrackedSourceLength_ThrowsInvalidOperationException()
+        {
+            // Arrange
+            var chunk = new Chunk { Index = 0, Text = "chunk", TokenCount = 1, SourceStart = 0, SourceLength = -1 };
+
+            // Act & Assert
+            Assert.Throws<InvalidOperationException>(() => chunk.SliceOf("The retrieval corpus."));
+        }
+
+        [Test]
+        public void SliceOf_NullDocument_ThrowsArgumentNullException()
+        {
+            // Arrange
+            var chunk = new Chunk { Index = 0, Text = "chunk", TokenCount = 1, SourceStart = 0, SourceLength = 5 };
+
+            // Act & Assert
+            Assert.Throws<ArgumentNullException>(() => chunk.SliceOf(null!));
         }
     }
 }

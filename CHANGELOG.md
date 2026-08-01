@@ -5,6 +5,81 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-08-01
+
+### Breaking
+
+- **The synchronous chunking API is removed.** `ChunkingPipeline.Chunk(...)` (both overloads) and
+  `IChunker.Chunk(...)` are gone; `ChunkAsync(...)` replaces them. Migration is mechanical:
+
+  ```csharp
+  // 1.x
+  var chunks = pipeline.Chunk(document);
+
+  // 2.0 — stream
+  await foreach (var chunk in pipeline.ChunkAsync(document)) { /* ... */ }
+
+  // 2.0 — batch
+  var chunks = await pipeline.ChunkAsync(document).ToListAsync();
+  ```
+
+  `ToListAsync` is in the box on .NET 10; on .NET 8 add the official `System.Linq.AsyncEnumerable`
+  package. Async-only is the ecosystem contract for chunking (Microsoft.Extensions.DataIngestion's
+  `IngestionChunker<T>` has the same shape), it is what the coming enricher seam and semantic
+  chunking need, and no released FluentChunker will ever have carried a half-async surface.
+
+### Added
+
+- **Streaming output with cancellation.** `ChunkAsync` returns `IAsyncEnumerable<Chunk>`: chunks are
+  produced lazily, the first is available before the last is cut, and the `CancellationToken` is
+  observed before every chunk (a pre-cancelled token throws before the first; `WithCancellation`
+  composes, and the suite pins that composition at both the chunker and the pipeline layer).
+
+  **Fixed-size chunking observes the token while it tokenizes, not only afterwards.** Every strategy
+  tokenizes, splits or parses the whole document before it can cut the first chunk, and that pass
+  used to be one opaque call no token could reach. Fixed-size chunking is the case where it is the
+  entire wait, because unlike the other strategies it cannot place a single window until the whole
+  document is encoded. It now encodes in bounded batches and checks the token between them, which
+  cuts worst-case latency there from the full encode to roughly 7 ms, the cost of one batch. Because
+  the batch is bounded by token count rather than by document size, that figure does not grow with
+  the document: on a 200 MB document the old behaviour waited seconds. Chunk boundaries are
+  unchanged, because the tokenizer
+  chooses where each batch ends and reports how far it reached, so resuming there reproduces a
+  whole-document encode exactly, asserted over Latin and over mixed CJK, Arabic, Devanagari, Greek,
+  Cyrillic and emoji text. Throughput is unchanged too, at 0.98x of the single call across a
+  nine-round median. Custom `ITokenizer` implementations keep the single call they always had.
+
+  **The other three strategies observe the token while they size their units.** Sentence-aware,
+  recursive and structure-aware chunking each find their boundaries and then measure every unit
+  against the tokenizer before the first chunk can be cut, and that sizing is the bulk of the wait:
+  on a 2 MB document, 71 ms of sentence sizing against a 5 ms boundary scan, and 30 ms of paragraph
+  sizing against a 1 ms scan. The token is now checked per unit, so cancelling during sizing stops at
+  the current unit instead of running through the rest of the document. Chunk boundaries are
+  untouched; the checks are a volatile read per unit.
+
+  **What cancellation still cannot interrupt.** Structure-aware chunking parses the Markdown in one
+  Markdig call before any of its own work begins, and that call takes no token and cannot report
+  progress, so it remains the one place a cancelled token waits — the largest part of the wait for
+  that strategy, and the only one that grows with the document. The two boundary scans are single
+  passes over the text and stay in single-digit milliseconds. The new **Streaming and Cancellation**
+  section carries the per-strategy table, the `WithCancellation` form for a layer handed nothing but
+  a stream, and the warning that `MoveNextAsync` completes synchronously, so a large document blocks
+  the calling thread unless the enumeration is wrapped in `Task.Run`.
+
+- **`Chunk.SliceOf(document)`** — the verification idiom replacing `document.Substring(...)`:
+  returns the verbatim source slice (equal to `Text` for every built-in strategy) and throws
+  `InvalidOperationException` when the chunk does not track offsets.
+
+### Changed
+
+- **`Chunk.SourceStart` is now a `long`** (was `int`). Positions in streamed sources — the next
+  release — can exceed `int.MaxValue`; taking the widening now means that release lands without
+  another break. In-memory documents are unaffected, and NUnit-style numeric assertions compare
+  across `int`/`long` unchanged.
+- **The tokenizer round-trip guard surfaces during enumeration.** The `InvalidOperationException`
+  for length-changing decode drift now throws at the `await foreach`/`ToListAsync` consuming the
+  stream, not at the `ChunkAsync` call, because chunks are produced lazily.
+
 ## [1.3.0] -2026-07-31
 
 ### Added

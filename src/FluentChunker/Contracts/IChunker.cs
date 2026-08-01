@@ -7,10 +7,11 @@ namespace FluentChunker.Contracts
     public interface IChunker
     {
         /// <summary>
-        /// Splits <paramref name="text"/> into chunks, in document order.
+        /// Splits <paramref name="text"/> into chunks, produced lazily and in document order as the sequence is enumerated.
         /// </summary>
         /// <param name="text">The document to split.</param>
-        /// <returns>The chunks, or an empty list if <paramref name="text"/> holds no content to split.</returns>
-        IReadOnlyList<Chunk> Chunk(string text);
+        /// <param name="cancellationToken">Observed before each chunk is produced: a token cancelled up front makes the enumeration throw <see cref="OperationCanceledException"/> before the first chunk, and one cancelled mid-enumeration stops it before the next.</param>
+        /// <returns>The chunks, or an empty sequence if <paramref name="text"/> holds no content to split.</returns>
+        IAsyncEnumerable<Chunk> ChunkAsync(string text, CancellationToken cancellationToken = default);
     }
 }

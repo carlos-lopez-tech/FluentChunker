@@ -1,4 +1,5 @@
 using FluentChunker.Chunkers.Recursive;
+using FluentChunker.Contracts;
 using FluentChunker.Tokenizers;
 
 namespace FluentChunker.Tests
@@ -41,40 +42,40 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Chunk_EmptyText_ReturnsEmptyList()
+        public async Task Chunk_EmptyText_ReturnsEmptyList()
         {
             // Arrange
             var chunker = new RecursiveChunker(_microsoftMLTokenizer, maxTokens: 10, overlap: 0);
 
             // Act
-            var result = chunker.Chunk("");
+            var result = await chunker.ChunkAsync("").ToListAsync();
 
             // Assert
             Assert.That(result, Is.Empty);
         }
 
         [Test]
-        public void Chunk_WhitespaceOnlyText_ReturnsEmptyList()
+        public async Task Chunk_WhitespaceOnlyText_ReturnsEmptyList()
         {
             // Arrange
             var chunker = new RecursiveChunker(_microsoftMLTokenizer, maxTokens: 10, overlap: 0);
 
             // Act
-            var result = chunker.Chunk("  \n \t \n  ");
+            var result = await chunker.ChunkAsync("  \n \t \n  ").ToListAsync();
 
             // Assert
             Assert.That(result, Is.Empty);
         }
 
         [Test]
-        public void Chunk_SentenceCheaperWithItsPrecedingSpace_StaysWithinBudget()
+        public async Task Chunk_SentenceCheaperWithItsPrecedingSpace_StaysWithinBudget()
         {
             // Arrange - " Demonstrated words follow after it." costs 7 tokens, but a chunk starting at that sentence drops the space and costs 8
             const string text = "The opening sentence stands here. Demonstrated words follow after it.";
             var chunker = new RecursiveChunker(_microsoftMLTokenizer, maxTokens: 7, overlap: 0);
 
             // Act
-            var result = chunker.Chunk(text);
+            var result = await chunker.ChunkAsync(text).ToListAsync();
 
             // Assert
             using (Assert.EnterMultipleScope())
@@ -86,13 +87,13 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Chunk_TextWithinBudget_ReturnsSingleChunk()
+        public async Task Chunk_TextWithinBudget_ReturnsSingleChunk()
         {
             // Arrange
             var chunker = new RecursiveChunker(_microsoftMLTokenizer, maxTokens: 100, overlap: 0);
 
             // Act
-            var result = chunker.Chunk(ParagraphOne);
+            var result = await chunker.ChunkAsync(ParagraphOne).ToListAsync();
 
             // Assert
             Assert.That(result, Has.Count.EqualTo(1));
@@ -104,13 +105,13 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Chunk_SmallParagraphs_PacksThemIntoOneChunk()
+        public async Task Chunk_SmallParagraphs_PacksThemIntoOneChunk()
         {
             // Arrange - generous budget: all three paragraphs must land in a single chunk
             var chunker = new RecursiveChunker(_microsoftMLTokenizer, maxTokens: 100, overlap: 0);
 
             // Act
-            var result = chunker.Chunk(ThreeParagraphs);
+            var result = await chunker.ChunkAsync(ThreeParagraphs).ToListAsync();
 
             // Assert - one chunk spanning all paragraphs, blank lines preserved inside the slice
             Assert.That(result, Has.Count.EqualTo(1));
@@ -118,13 +119,13 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Chunk_ParagraphsExceedingBudget_SplitAtParagraphBoundary()
+        public async Task Chunk_ParagraphsExceedingBudget_SplitAtParagraphBoundary()
         {
             // Arrange - 15 tokens fit any single paragraph but never two
             var chunker = new RecursiveChunker(_microsoftMLTokenizer, maxTokens: 15, overlap: 0);
 
             // Act
-            var result = chunker.Chunk(ThreeParagraphs);
+            var result = await chunker.ChunkAsync(ThreeParagraphs).ToListAsync();
 
             // Assert - one chunk per paragraph, each an exact paragraph slice
             Assert.That(result, Has.Count.EqualTo(3));
@@ -137,13 +138,13 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Chunk_ChunkText_IsVerbatimSliceOfSource()
+        public async Task Chunk_ChunkText_IsVerbatimSliceOfSource()
         {
             // Arrange
             var chunker = new RecursiveChunker(_microsoftMLTokenizer, maxTokens: 15, overlap: 0);
 
             // Act
-            var result = chunker.Chunk(ThreeParagraphs);
+            var result = await chunker.ChunkAsync(ThreeParagraphs).ToListAsync();
 
             // Assert
             foreach (var chunk in result)
@@ -154,13 +155,13 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Chunk_MultipleChunks_HasSequentialIndices()
+        public async Task Chunk_MultipleChunks_HasSequentialIndices()
         {
             // Arrange
             var chunker = new RecursiveChunker(_microsoftMLTokenizer, maxTokens: 15, overlap: 0);
 
             // Act
-            var result = chunker.Chunk(ThreeParagraphs);
+            var result = await chunker.ChunkAsync(ThreeParagraphs).ToListAsync();
 
             // Assert
             for (var i = 0; i < result.Count; i++)
@@ -170,13 +171,13 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Chunk_OversizedParagraph_DescendsToLines()
+        public async Task Chunk_OversizedParagraph_DescendsToLines()
         {
             // Arrange - the whole input is ONE paragraph (single '\n' separators) over budget
             var chunker = new RecursiveChunker(_microsoftMLTokenizer, maxTokens: 15, overlap: 0);
 
             // Act
-            var result = chunker.Chunk(MultiLineParagraph);
+            var result = await chunker.ChunkAsync(MultiLineParagraph).ToListAsync();
 
             // Assert - one chunk per line, each an exact line slice
             Assert.That(result, Has.Count.EqualTo(3));
@@ -189,13 +190,13 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Chunk_OversizedSingleLineParagraph_DescendsToSentences()
+        public async Task Chunk_OversizedSingleLineParagraph_DescendsToSentences()
         {
             // Arrange - no line breaks anywhere: the line tier returns the unit unchanged and descent continues to the sentence tier
             var chunker = new RecursiveChunker(_microsoftMLTokenizer, maxTokens: 15, overlap: 0);
 
             // Act
-            var result = chunker.Chunk(ThreeSentenceLine);
+            var result = await chunker.ChunkAsync(ThreeSentenceLine).ToListAsync();
 
             // Assert - chunks align with sentence boundaries
             Assert.That(result, Has.Count.GreaterThan(1));
@@ -206,7 +207,7 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Chunk_AbbreviationInsideOversizedLine_DoesNotSplitAtAbbreviation()
+        public async Task Chunk_AbbreviationInsideOversizedLine_DoesNotSplitAtAbbreviation()
         {
             // Arrange - "Vgl" is NOT in the built-in abbreviation set; without the custom entry the sentence tier would falsely split after "Vgl." (entries are stored dot-trimmed - the builder normalizes user input the same way in Step 6)
             var abbreviations = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Vgl" };
@@ -215,7 +216,7 @@ namespace FluentChunker.Tests
                 additionalAbbreviations: abbreviations);
 
             // Act
-            var result = chunker.Chunk(text);
+            var result = await chunker.ChunkAsync(text).ToListAsync();
 
             // Assert - the guarded abbreviation keeps its sentence intact
             Assert.That(result[0].Text, Does.StartWith("Vgl. Abschnitt"));
@@ -226,13 +227,13 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Chunk_OversizedSentence_FallsBackToBalancedTokenWindows()
+        public async Task Chunk_OversizedSentence_FallsBackToBalancedTokenWindows()
         {
             // Arrange
             var chunker = new RecursiveChunker(_microsoftMLTokenizer, maxTokens: 15, overlap: 0);
 
             // Act
-            var result = chunker.Chunk(RunOnSentence);
+            var result = await chunker.ChunkAsync(RunOnSentence).ToListAsync();
 
             // Assert - multiple windows, all within budget, evenly balanced (sizes differ by at most one token), no overlap between them
             Assert.That(result, Has.Count.GreaterThan(1));
@@ -250,14 +251,14 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Chunk_SmallUnitBeforeOversizedUnit_NotMergedAcrossSeam()
+        public async Task Chunk_SmallUnitBeforeOversizedUnit_NotMergedAcrossSeam()
         {
             // Arrange - "A brief opening note." (~4 tokens) would fit together with the first line of the oversized paragraph (4 + 11 ≤ 15); strict seams must keep it separate
             var text = "A brief opening note.\n\n" + MultiLineParagraph;
             var chunker = new RecursiveChunker(_microsoftMLTokenizer, maxTokens: 15, overlap: 0);
 
             // Act
-            var result = chunker.Chunk(text);
+            var result = await chunker.ChunkAsync(text).ToListAsync();
 
             // Assert
             using (Assert.EnterMultipleScope())
@@ -268,14 +269,14 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Chunk_SmallUnitAfterOversizedUnit_NotMergedAcrossSeam()
+        public async Task Chunk_SmallUnitAfterOversizedUnit_NotMergedAcrossSeam()
         {
             // Arrange - mirror case: the trailing small paragraph must not absorb the last line of the oversized paragraph
             var text = MultiLineParagraph + "\n\nA brief closing note.";
             var chunker = new RecursiveChunker(_microsoftMLTokenizer, maxTokens: 15, overlap: 0);
 
             // Act
-            var result = chunker.Chunk(text);
+            var result = await chunker.ChunkAsync(text).ToListAsync();
 
             // Assert
             using (Assert.EnterMultipleScope())
@@ -286,14 +287,14 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Chunk_CrLfDocument_ChunksStayWithinBudget()
+        public async Task Chunk_CrLfDocument_ChunksStayWithinBudget()
         {
             // Arrange - same structure as MultiLineParagraph but with \r\n line endings
             var text = LineOne + "\r\n" + LineTwo + "\r\n" + LineThree;
             var chunker = new RecursiveChunker(_microsoftMLTokenizer, maxTokens: 15, overlap: 0);
 
             // Act
-            var result = chunker.Chunk(text);
+            var result = await chunker.ChunkAsync(text).ToListAsync();
 
             // Assert - budget holds and no chunk starts or ends on separator whitespace
             Assert.That(result, Has.Count.EqualTo(3));
@@ -310,14 +311,14 @@ namespace FluentChunker.Tests
         [TestCase(10)]
         [TestCase(15)]
         [TestCase(25)]
-        public void Chunk_MixedStructureDocument_EveryChunkStaysWithinTokenBudget(int maxTokens)
+        public async Task Chunk_MixedStructureDocument_EveryChunkStaysWithinTokenBudget(int maxTokens)
         {
             // Arrange - small paragraphs, an oversized multi-line paragraph, and a run-on sentence: exercises every tier of the ladder in one document
             var text = ThreeParagraphs + "\n\n" + MultiLineParagraph + "\n\n" + RunOnSentence;
             var chunker = new RecursiveChunker(_microsoftMLTokenizer, maxTokens, overlap: 0);
 
             // Act
-            var result = chunker.Chunk(text);
+            var result = await chunker.ChunkAsync(text).ToListAsync();
 
             // Assert - the budget invariant holds on every chunk, indices stay sequential
             Assert.That(result, Has.Count.GreaterThan(1));
@@ -332,14 +333,14 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Chunk_WithOverlap_CarriesWholeTrailingUnits()
+        public async Task Chunk_WithOverlap_CarriesWholeTrailingUnits()
         {
             // Arrange - budget fits two paragraphs plus a carried one; overlap fits exactly one whole paragraph (~10-13 tokens gap-inclusive)
             var text = ThreeParagraphs + "\n\n" + ParagraphFour;
             var chunker = new RecursiveChunker(_microsoftMLTokenizer, maxTokens: 28, overlap: 14);
 
             // Act
-            var result = chunker.Chunk(text);
+            var result = await chunker.ChunkAsync(text).ToListAsync();
 
             // Assert - the second chunk received carried tokens, and the carried text is exactly the trailing paragraph of the first chunk (whole-unit carry)
             Assert.That(result, Has.Count.GreaterThanOrEqualTo(2));
@@ -352,21 +353,21 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Chunk_WithOverlap_FirstChunkHasZeroOverlapCount()
+        public async Task Chunk_WithOverlap_FirstChunkHasZeroOverlapCount()
         {
             // Arrange
             var text = ThreeParagraphs + "\n\n" + ParagraphFour;
             var chunker = new RecursiveChunker(_microsoftMLTokenizer, maxTokens: 28, overlap: 14);
 
             // Act
-            var result = chunker.Chunk(text);
+            var result = await chunker.ChunkAsync(text).ToListAsync();
 
             // Assert
             Assert.That(result[0].OverlapCount, Is.Zero);
         }
 
         [Test]
-        public void Chunk_OverlapAtDescentSeam_ResetsToZero()
+        public async Task Chunk_OverlapAtDescentSeam_ResetsToZero()
         {
             // Arrange - small paragraph, oversized multi-line paragraph, small paragraph.
             // Both neighbors of the oversized unit would fit the 14-token overlap budget,
@@ -375,7 +376,7 @@ namespace FluentChunker.Tests
             var chunker = new RecursiveChunker(_microsoftMLTokenizer, maxTokens: 28, overlap: 14);
 
             // Act
-            var result = chunker.Chunk(text);
+            var result = await chunker.ChunkAsync(text).ToListAsync();
 
             // Assert - no carry INTO the descent (first line chunk) nor OUT of it (outro)
             var firstDescendedChunk = result.First(c => c.Text.StartsWith("The first note"));
@@ -388,14 +389,14 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Chunk_OverlapWithinDescendedRun_CarriesTrailingLine()
+        public async Task Chunk_OverlapWithinDescendedRun_CarriesTrailingLine()
         {
             // Arrange - same document: INSIDE the descended line run, overlap must still work
             var text = "A brief opening note.\n\n" + MultiLineParagraph + "\n\nA brief closing note.";
             var chunker = new RecursiveChunker(_microsoftMLTokenizer, maxTokens: 28, overlap: 14);
 
             // Act
-            var result = chunker.Chunk(text);
+            var result = await chunker.ChunkAsync(text).ToListAsync();
 
             // Assert - exactly one chunk carries overlap: the line chunk seeded with the previous line ([L1 L2] flushes, [L2 L3] receives L2)
             var seededChunk = result.Single(c => c.OverlapCount > 0);
@@ -403,14 +404,14 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Chunk_OverlapAfterFallbackWindows_ResetsToZero()
+        public async Task Chunk_OverlapAfterFallbackWindows_ResetsToZero()
         {
             // Arrange - a run-on sentence forces token windows; the paragraph after them must start without carried tokens
             var text = RunOnSentence + "\n\nA brief closing note.";
             var chunker = new RecursiveChunker(_microsoftMLTokenizer, maxTokens: 15, overlap: 8);
 
             // Act
-            var result = chunker.Chunk(text);
+            var result = await chunker.ChunkAsync(text).ToListAsync();
 
             // Assert - windows never carry overlap, and neither does the chunk after them
             Assert.That(result[^1].Text, Is.EqualTo("A brief closing note."));
@@ -421,14 +422,14 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Chunk_SeedLeavesNoRoomForIncomingUnit_TrimsSeed()
+        public async Task Chunk_SeedLeavesNoRoomForIncomingUnit_TrimsSeed()
         {
             // Arrange - a generous overlap budget (14) admits a whole trailing paragraph,
             // but seed (~10) + incoming (~10) would blow the 15-token chunk budget, so the seed must be dropped again: the budget invariant always wins over overlap
             var chunker = new RecursiveChunker(_microsoftMLTokenizer, maxTokens: 15, overlap: 14);
 
             // Act
-            var result = chunker.Chunk(ThreeParagraphs);
+            var result = await chunker.ChunkAsync(ThreeParagraphs).ToListAsync();
 
             // Assert - one paragraph per chunk, nothing carried anywhere
             Assert.That(result, Has.Count.EqualTo(3));
@@ -440,6 +441,98 @@ namespace FluentChunker.Tests
                     Assert.That(chunk.TokenCount, Is.LessThanOrEqualTo(15));
                 }
             }
+        }
+
+        // One token per character with an exact round trip, so packing math is predictable and the round-trip guard stays quiet.
+        private sealed class CharTokenizer : FluentChunker.Tokenizers.ITokenizer
+        {
+            public IReadOnlyList<int> Encode(string text)
+            {
+                var tokens = new int[text.Length];
+
+                for (var i = 0; i < text.Length; i++)
+                {
+                    tokens[i] = text[i];
+                }
+
+                return tokens;
+            }
+
+            public string Decode(IReadOnlyList<int> tokens)
+            {
+                var decoded = new System.Text.StringBuilder();
+
+                foreach (var token in tokens)
+                {
+                    decoded.Append((char)token);
+                }
+
+                return decoded.ToString();
+            }
+
+            public int CountTokens(string text) => text.Length;
+        }
+
+        // Three paragraphs whose gap-inclusive char counts are 19, 22 and 21, so a 22-token budget packs exactly one paragraph per chunk with no descent.
+        private const string ThreeParagraphText = "First archive note.\n\nSecond archive note.\n\nThird archive note.";
+
+        [Test]
+        public async Task ChunkAsync_EmptyText_YieldsNothing()
+        {
+            // Arrange
+            var chunker = new RecursiveChunker(new CharTokenizer(), maxTokens: 22, overlap: 0);
+
+            // Act
+            var result = await chunker.ChunkAsync(string.Empty).ToListAsync();
+
+            // Assert
+            Assert.That(result, Is.Empty);
+        }
+
+        [Test]
+        public void ChunkAsync_PreCancelledToken_ThrowsBeforeFirstChunk()
+        {
+            // Arrange
+            var chunker = new RecursiveChunker(new CharTokenizer(), maxTokens: 22, overlap: 0);
+            using var cts = new CancellationTokenSource();
+            cts.Cancel();
+            var consumed = new List<Chunk>();
+
+            // Act
+            async Task Consume()
+            {
+                await foreach (var chunk in chunker.ChunkAsync(ThreeParagraphText, cts.Token))
+                {
+                    consumed.Add(chunk);
+                }
+            }
+
+            // Assert
+            Assert.ThrowsAsync<OperationCanceledException>(Consume);
+            Assert.That(consumed, Is.Empty);
+        }
+
+        [Test]
+        public void ChunkAsync_TokenCancelledMidEnumeration_StopsBeforeNextChunk()
+        {
+            // Arrange
+            var chunker = new RecursiveChunker(new CharTokenizer(), maxTokens: 22, overlap: 0);
+            using var cts = new CancellationTokenSource();
+            var consumed = new List<Chunk>();
+
+            // Act
+            async Task Consume()
+            {
+                await foreach (var chunk in chunker.ChunkAsync(ThreeParagraphText, cts.Token))
+                {
+                    consumed.Add(chunk);
+                    cts.Cancel();
+                }
+            }
+
+            // Assert
+            Assert.ThrowsAsync<OperationCanceledException>(Consume);
+            Assert.That(consumed, Has.Count.EqualTo(1));
         }
     }
 }

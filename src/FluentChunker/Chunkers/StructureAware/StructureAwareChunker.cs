@@ -27,14 +27,20 @@ namespace FluentChunker.Chunkers.StructureAware
         private readonly int _maxTokens = maxTokens;
         private readonly IReadOnlySet<string>? _additionalAbbreviations = additionalAbbreviations;
 
-        public IReadOnlyList<Chunk> Chunk(string text)
+        /// <inheritdoc/>
+        public IAsyncEnumerable<Chunk> ChunkAsync(string text, CancellationToken cancellationToken = default) =>
+            ChunkStream.Over(token => ChunkCore(text, token), cancellationToken);
+
+        // The Markdig parse deliberately stays upfront: Markdig does not parse incrementally and the document is fully in memory here by definition.
+        // It is also the one part of chunking no token can reach, and by a wide margin the largest, so it dominates the wait for the first chunk.
+        // Chunks stream per section after the parse.
+        private IEnumerable<Chunk> ChunkCore(string text, CancellationToken cancellationToken)
         {
             if (string.IsNullOrEmpty(text))
-                return [];
+                yield break;
 
             var sections = MarkdownSectionParser.Parse(text);
-            var chunks = new List<Chunk>();
-            var index = 0;
+            var counter = new ChunkCounter();
 
             foreach (var section in sections)
             {
@@ -46,24 +52,23 @@ namespace FluentChunker.Chunkers.StructureAware
                     [HeadingPathMetadataKey] = JsonSerializer.SerializeToElement(headingPath)
                 });
 
-                PackRun(text, section.Blocks, Tier.Blocks, sectionMetadata, chunks, ref index);
+                foreach (var chunk in PackRun(text, section.Blocks, Tier.Blocks, sectionMetadata, counter, cancellationToken))
+                    yield return chunk;
             }
-
-            return chunks;
         }
 
         // Packs one run of same-level units into chunks.
         // Because every section is packed independently, a chunk can never span two sections: headings are hard seams.
         // A unit that alone exceeds the budget is flushed around and descended into, so units on opposite sides of it never share a chunk.
-        private void PackRun(
-            string text, 
-            IReadOnlyList<SectionBlock> units, 
-            Tier tier, 
-            ChunkMetadata sectionMetadata, 
-            List<Chunk> chunks, 
-            ref int index)
+        private IEnumerable<Chunk> PackRun(
+            string text,
+            IReadOnlyList<SectionBlock> units,
+            Tier tier,
+            ChunkMetadata sectionMetadata,
+            ChunkCounter counter,
+            CancellationToken cancellationToken)
         {
-            var tokenCounts = CountUnitTokens(text, units);
+            var tokenCounts = CountUnitTokens(text, units, cancellationToken);
             var buffer = new List<int>();
             var bufferTokens = 0;
 
@@ -71,17 +76,19 @@ namespace FluentChunker.Chunkers.StructureAware
             {
                 if (tokenCounts[i] > _maxTokens)
                 {
-                    FlushChunk(text, units, buffer, sectionMetadata, chunks, ref index);
+                    if (buffer.Count > 0)
+                        yield return BuildChunk(text, units, buffer, sectionMetadata, counter.Next());
                     buffer.Clear();
                     bufferTokens = 0;
 
-                    Descend(text, units[i], tier, sectionMetadata, chunks, ref index);
+                    foreach (var chunk in Descend(text, units[i], tier, sectionMetadata, counter, cancellationToken))
+                        yield return chunk;
                     continue;
                 }
 
                 if (buffer.Count > 0 && bufferTokens + tokenCounts[i] > _maxTokens)
                 {
-                    FlushChunk(text, units, buffer, sectionMetadata, chunks, ref index);
+                    yield return BuildChunk(text, units, buffer, sectionMetadata, counter.Next());
                     buffer.Clear();
                     bufferTokens = 0;
                 }
@@ -90,27 +97,26 @@ namespace FluentChunker.Chunkers.StructureAware
                 bufferTokens += tokenCounts[i];
             }
 
-            FlushChunk(text, units, buffer, sectionMetadata, chunks, ref index);
+            if (buffer.Count > 0)
+                yield return BuildChunk(text, units, buffer, sectionMetadata, counter.Next());
         }
 
         // An oversized atomic unit (heading, fence, table, list, quote) has nothing semantic to descend into, an oversized sentence has no smaller level left.
         // Both go straight to token windows.
         // Only an oversized paragraph descends to its sentences.
-        private void Descend(
-            string text, 
-            SectionBlock unit, 
-            Tier tier, 
-            ChunkMetadata sectionMetadata, 
-            List<Chunk> chunks, ref int index)
+        // See Descend in RecursiveChunker for why a dispatch-only method returns the next level's stream instead of becoming an iterator of its own.
+        private IEnumerable<Chunk> Descend(
+            string text,
+            SectionBlock unit,
+            Tier tier,
+            ChunkMetadata sectionMetadata,
+            ChunkCounter counter,
+            CancellationToken cancellationToken)
         {
             if (tier == Tier.Sentences || unit.IsAtomic)
-            {
-                EmitTokenWindows(text, unit.Span, sectionMetadata, chunks, ref index);
-                return;
-            }
+                return EmitTokenWindows(text, unit.Span, sectionMetadata, counter);
 
-            PackRun(text, SplitSentences(text, unit.Span), Tier.Sentences, sectionMetadata,
-                chunks, ref index);
+            return PackRun(text, SplitSentences(text, unit.Span), Tier.Sentences, sectionMetadata, counter, cancellationToken);
         }
 
         // See SplitSentences in RecursiveChunker: the paragraph is split as a standalone copy, then every returned position is shifted by its offset to point back into the document.
@@ -132,12 +138,14 @@ namespace FluentChunker.Chunkers.StructureAware
         }
 
         // See CountSentenceTokens in SentenceAwareChunker: each unit is budgeted against the worse of the two positions it can occupy, because dropping the whitespace before it can raise its token count rather than lower it.
-        private int[] CountUnitTokens(string text, IReadOnlyList<SectionBlock> units)
+        private int[] CountUnitTokens(string text, IReadOnlyList<SectionBlock> units, CancellationToken cancellationToken)
         {
             var tokenCounts = new int[units.Count];
 
             for (var i = 0; i < units.Count; i++)
             {
+                cancellationToken.ThrowIfCancellationRequested();
+
                 var unit = units[i].Span;
                 var asChunkStart = _tokenizer.CountTokens(text.Substring(unit.Start, unit.Length));
 
@@ -157,31 +165,26 @@ namespace FluentChunker.Chunkers.StructureAware
             return tokenCounts;
         }
 
-        private void FlushChunk(
-            string text, 
-            IReadOnlyList<SectionBlock> units, 
-            List<int> bufferedUnits, 
-            ChunkMetadata sectionMetadata, 
-            List<Chunk> chunks, 
-            ref int index)
+        private Chunk BuildChunk(
+            string text,
+            IReadOnlyList<SectionBlock> units,
+            List<int> bufferedUnits,
+            ChunkMetadata sectionMetadata,
+            int index)
         {
-            if (bufferedUnits.Count == 0)
-                return;
-
             var start = units[bufferedUnits[0]].Span.Start;
             var end = units[bufferedUnits[^1]].Span.End;
             var chunkText = text[start..end];
 
-            chunks.Add(CreateChunk(index++, chunkText, _tokenizer.CountTokens(chunkText), sectionMetadata, start, end - start));
+            return CreateChunk(index, chunkText, _tokenizer.CountTokens(chunkText), sectionMetadata, start, end - start);
         }
 
         // See EmitOversizedSentence in SentenceAwareChunker: a unit with no smaller structure left is cut into evenly balanced windows that all land on legal cuts, with extents shifted by its start to point back into the document.
-        private void EmitTokenWindows(
-            string text, 
-            SentenceSpan unit, 
-            ChunkMetadata sectionMetadata, 
-            List<Chunk> chunks, 
-            ref int index)
+        private IEnumerable<Chunk> EmitTokenWindows(
+            string text,
+            SentenceSpan unit,
+            ChunkMetadata sectionMetadata,
+            ChunkCounter counter)
         {
             var tokens = _tokenizer.Encode(text.Substring(unit.Start, unit.Length));
             var boundary = new TokenBoundary(_tokenizer, tokens);
@@ -190,8 +193,8 @@ namespace FluentChunker.Chunkers.StructureAware
             {
                 var sourceStart = unit.Start + window.CharStart;
 
-                chunks.Add(CreateChunk(index++, text.Substring(sourceStart, window.CharLength),
-                    window.Length, sectionMetadata, sourceStart, window.CharLength));
+                yield return CreateChunk(counter.Next(), text.Substring(sourceStart, window.CharLength),
+                    window.Length, sectionMetadata, sourceStart, window.CharLength);
             }
         }
 

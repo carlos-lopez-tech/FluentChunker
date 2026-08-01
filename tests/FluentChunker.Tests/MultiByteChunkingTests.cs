@@ -55,7 +55,7 @@ namespace FluentChunker.Tests
         [TestCase(12)]
         [TestCase(20)]
         [TestCase(40)]
-        public void Chunk_MultiByteDocumentsAcrossEveryStrategy_ProducesNoReplacementCharacters(int maxTokens)
+        public async Task Chunk_MultiByteDocumentsAcrossEveryStrategy_ProducesNoReplacementCharacters(int maxTokens)
         {
             // Arrange
             var pipelines = PipelinesFor(maxTokens);
@@ -66,7 +66,7 @@ namespace FluentChunker.Tests
             {
                 foreach (var document in Documents)
                 {
-                    corrupted.AddRange(pipeline.Chunk(document).Where(c => c.Text.Contains('�')).Select(c => c.Text));
+                    corrupted.AddRange((await pipeline.ChunkAsync(document).ToListAsync()).Where(c => c.Text.Contains('�')).Select(c => c.Text));
                 }
             }
 
@@ -78,7 +78,7 @@ namespace FluentChunker.Tests
         [TestCase(12)]
         [TestCase(20)]
         [TestCase(40)]
-        public void Chunk_MultiByteDocumentsAcrossEveryStrategy_KeepsEveryChunkWithinBudget(int maxTokens)
+        public async Task Chunk_MultiByteDocumentsAcrossEveryStrategy_KeepsEveryChunkWithinBudget(int maxTokens)
         {
             // Arrange
             var pipelines = PipelinesFor(maxTokens);
@@ -89,7 +89,7 @@ namespace FluentChunker.Tests
             {
                 foreach (var document in Documents)
                 {
-                    overBudget.AddRange(pipeline.Chunk(document)
+                    overBudget.AddRange((await pipeline.ChunkAsync(document).ToListAsync())
                         .Select(c => _tokenizer.CountTokens(c.Text))
                         .Where(count => count > maxTokens));
                 }
@@ -103,7 +103,7 @@ namespace FluentChunker.Tests
         [TestCase(12)]
         [TestCase(20)]
         [TestCase(40)]
-        public void Chunk_MultiByteDocumentsAcrossEveryStrategy_ReportsAccurateTokenCounts(int maxTokens)
+        public async Task Chunk_MultiByteDocumentsAcrossEveryStrategy_ReportsAccurateTokenCounts(int maxTokens)
         {
             // Arrange
             var pipelines = PipelinesFor(maxTokens);
@@ -114,7 +114,7 @@ namespace FluentChunker.Tests
             {
                 foreach (var document in Documents)
                 {
-                    mismatched.AddRange(pipeline.Chunk(document)
+                    mismatched.AddRange((await pipeline.ChunkAsync(document).ToListAsync())
                         .Where(c => _tokenizer.CountTokens(c.Text) != c.TokenCount)
                         .Select(c => c.Text));
                 }
@@ -125,14 +125,14 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Chunk_OversizedMultiByteUnitWithoutOverlap_ChunksReconstructTheUnitExactly()
+        public async Task Chunk_OversizedMultiByteUnitWithoutOverlap_ChunksReconstructTheUnitExactly()
         {
             // Arrange - no overlap, so the chunks partition the document and must concatenate back to it.
             var pipeline = ChunkingPipeline.CreateBuilder().UseTokenizer(_tokenizer)
                 .UseSplitter(s => s.WithSentenceAwareChunking().WithMaxTokenSize(12)).Build();
 
             // Act
-            var result = pipeline.Chunk(ChineseDocument);
+            var result = await pipeline.ChunkAsync(ChineseDocument).ToListAsync();
 
             // Assert
             Assert.That(result, Has.Count.GreaterThan(1));
@@ -171,18 +171,23 @@ namespace FluentChunker.Tests
         [TestCase(16)]
         [TestCase(64)]
         [TestCase(512)]
-        public void Chunk_MaxTokenSizeOfFourOrAbove_NeverExceedsTheBudget(int maxTokens)
+        public async Task Chunk_MaxTokenSizeOfFourOrAbove_NeverExceedsTheBudget(int maxTokens)
         {
             // Arrange - the worst-case document alongside the others, since the guarantee is claimed for any input.
             var pipelines = PipelinesFor(maxTokens);
             string[] documents = [FourTokenCharacterDocument, EmojiDocument, ChineseDocument, MixedDocument];
 
             // Act
-            var overBudget = pipelines
-                .SelectMany(p => documents.SelectMany(p.Chunk))
-                .Where(c => c.TokenCount > maxTokens)
-                .Select(c => $"{c.TokenCount} > {maxTokens}: {c.Text}")
-                .ToList();
+            var overBudget = new List<string>();
+            foreach (var pipeline in pipelines)
+            {
+                foreach (var document in documents)
+                {
+                    overBudget.AddRange((await pipeline.ChunkAsync(document).ToListAsync())
+                        .Where(c => c.TokenCount > maxTokens)
+                        .Select(c => $"{c.TokenCount} > {maxTokens}: {c.Text}"));
+                }
+            }
 
             // Assert
             Assert.That(overBudget, Is.Empty);
@@ -191,14 +196,14 @@ namespace FluentChunker.Tests
         [TestCase(4)]
         [TestCase(5)]
         [TestCase(16)]
-        public void Chunk_FourTokenCharactersWithoutOverlap_ChunksReconstructTheDocumentExactly(int maxTokens)
+        public async Task Chunk_FourTokenCharactersWithoutOverlap_ChunksReconstructTheDocumentExactly(int maxTokens)
         {
             // Arrange - fixed-size chunking partitions the whole document, so the chunks must concatenate back to it, starting at the narrowest budget the builder allows.
             var pipeline = ChunkingPipeline.CreateBuilder().UseTokenizer(_tokenizer)
                 .UseSplitter(s => s.WithFixedSizeChunking().WithMaxTokenSize(maxTokens)).Build();
 
             // Act
-            var result = pipeline.Chunk(FourTokenCharacterDocument);
+            var result = await pipeline.ChunkAsync(FourTokenCharacterDocument).ToListAsync();
 
             // Assert
             Assert.That(string.Concat(result.Select(c => c.Text)), Is.EqualTo(FourTokenCharacterDocument));

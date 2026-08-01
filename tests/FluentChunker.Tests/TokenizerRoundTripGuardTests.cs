@@ -112,7 +112,7 @@ namespace FluentChunker.Tests
             var pipeline = PipelineFor(strategy, Shortening(), maxTokens: 8);
 
             // Act & Assert
-            Assert.Throws<InvalidOperationException>(() => pipeline.Chunk(DriftDocument));
+            Assert.ThrowsAsync<InvalidOperationException>(async () => await pipeline.ChunkAsync(DriftDocument).ToListAsync());
         }
 
         [TestCase(FixedSize)]
@@ -124,7 +124,7 @@ namespace FluentChunker.Tests
             var pipeline = PipelineFor(strategy, Shortening(), maxTokens: 8, overlap: 3);
 
             // Act & Assert
-            Assert.Throws<InvalidOperationException>(() => pipeline.Chunk(DriftDocument));
+            Assert.ThrowsAsync<InvalidOperationException>(async () => await pipeline.ChunkAsync(DriftDocument).ToListAsync());
         }
 
         // The failure mode this guards is a caller slicing its source with an extent that runs past the end.
@@ -139,7 +139,7 @@ namespace FluentChunker.Tests
             var pipeline = PipelineFor(strategy, Lengthening(), maxTokens: 8);
 
             // Act
-            var exception = Assert.Throws<InvalidOperationException>(() => pipeline.Chunk(DriftDocument));
+            var exception = Assert.ThrowsAsync<InvalidOperationException>(async () => await pipeline.ChunkAsync(DriftDocument).ToListAsync());
 
             // Assert
             using (Assert.EnterMultipleScope())
@@ -158,7 +158,7 @@ namespace FluentChunker.Tests
             var pipeline = PipelineFor(strategy, Lengthening(), maxTokens: 8, overlap: 3);
 
             // Act & Assert
-            Assert.Throws<InvalidOperationException>(() => pipeline.Chunk(DriftDocument));
+            Assert.ThrowsAsync<InvalidOperationException>(async () => await pipeline.ChunkAsync(DriftDocument).ToListAsync());
         }
 
         // Asserted per strategy rather than once, so the exception is pinned to the guard on both layouts instead of merely being an InvalidOperationException from somewhere.
@@ -172,7 +172,7 @@ namespace FluentChunker.Tests
             var pipeline = PipelineFor(strategy, Shortening(), maxTokens: 8);
 
             // Act
-            var exception = Assert.Throws<InvalidOperationException>(() => pipeline.Chunk(DriftDocument));
+            var exception = Assert.ThrowsAsync<InvalidOperationException>(async () => await pipeline.ChunkAsync(DriftDocument).ToListAsync());
 
             // Assert
             using (Assert.EnterMultipleScope())
@@ -187,13 +187,13 @@ namespace FluentChunker.Tests
         [TestCase(SentenceAware)]
         [TestCase(Recursive)]
         [TestCase(StructureAware)]
-        public void Chunk_ConformingTokenizerOverALengthThatDividesTheBudget_DoesNotThrow(string strategy)
+        public async Task Chunk_ConformingTokenizerOverALengthThatDividesTheBudget_DoesNotThrow(string strategy)
         {
             // Arrange
             var pipeline = PipelineFor(strategy, Conforming(), maxTokens: 8);
 
             // Act
-            var chunks = pipeline.Chunk(ExactMultipleDocument);
+            var chunks = await pipeline.ChunkAsync(ExactMultipleDocument).ToListAsync();
 
             // Assert
             Assert.That(chunks, Is.Not.Empty);
@@ -203,13 +203,13 @@ namespace FluentChunker.Tests
         [TestCase(SentenceAware)]
         [TestCase(Recursive)]
         [TestCase(StructureAware)]
-        public void Chunk_ConformingTokenizerOverALengthThatDoesNotDivideTheBudget_DoesNotThrow(string strategy)
+        public async Task Chunk_ConformingTokenizerOverALengthThatDoesNotDivideTheBudget_DoesNotThrow(string strategy)
         {
             // Arrange
             var pipeline = PipelineFor(strategy, Conforming(), maxTokens: 8);
 
             // Act
-            var chunks = pipeline.Chunk(NotMultipleDocument);
+            var chunks = await pipeline.ChunkAsync(NotMultipleDocument).ToListAsync();
 
             // Assert
             Assert.That(chunks, Is.Not.Empty);
@@ -218,13 +218,13 @@ namespace FluentChunker.Tests
         [TestCase(FixedSize)]
         [TestCase(SentenceAware)]
         [TestCase(Recursive)]
-        public void Chunk_ConformingTokenizerWithOverlap_DoesNotThrow(string strategy)
+        public async Task Chunk_ConformingTokenizerWithOverlap_DoesNotThrow(string strategy)
         {
             // Arrange
             var pipeline = PipelineFor(strategy, Conforming(), maxTokens: 8, overlap: 3);
 
             // Act
-            var chunks = pipeline.Chunk(NotMultipleDocument);
+            var chunks = await pipeline.ChunkAsync(NotMultipleDocument).ToListAsync();
 
             // Assert
             Assert.That(chunks, Is.Not.Empty);
@@ -238,13 +238,13 @@ namespace FluentChunker.Tests
         [TestCase(Recursive, 20)]
         [TestCase(StructureAware, 8)]
         [TestCase(StructureAware, 20)]
-        public void Chunk_ShippedEncodingOverPlainText_DoesNotThrow(string strategy, int maxTokens)
+        public async Task Chunk_ShippedEncodingOverPlainText_DoesNotThrow(string strategy, int maxTokens)
         {
             // Arrange
             var pipeline = PipelineFor(strategy, _tokenizer, maxTokens);
 
             // Act
-            var chunks = pipeline.Chunk(DriftDocument);
+            var chunks = await pipeline.ChunkAsync(DriftDocument).ToListAsync();
 
             // Assert
             Assert.That(chunks, Is.Not.Empty);
@@ -253,13 +253,13 @@ namespace FluentChunker.Tests
         [TestCase(FixedSize)]
         [TestCase(SentenceAware)]
         [TestCase(Recursive)]
-        public void Chunk_ShippedEncodingWithOverlap_DoesNotThrow(string strategy)
+        public async Task Chunk_ShippedEncodingWithOverlap_DoesNotThrow(string strategy)
         {
             // Arrange
             var pipeline = PipelineFor(strategy, _tokenizer, maxTokens: 8, overlap: 3);
 
             // Act
-            var chunks = pipeline.Chunk(DriftDocument);
+            var chunks = await pipeline.ChunkAsync(DriftDocument).ToListAsync();
 
             // Assert
             Assert.That(chunks, Is.Not.Empty);
@@ -278,13 +278,13 @@ namespace FluentChunker.Tests
         [TestCase(StructureAware, EmojiDocument)]
         [TestCase(StructureAware, ChineseDocument)]
         [TestCase(StructureAware, MixedScriptDocument)]
-        public void Chunk_ShippedEncodingOverNonLatinAndEmojiText_DoesNotThrow(string strategy, string document)
+        public async Task Chunk_ShippedEncodingOverNonLatinAndEmojiText_DoesNotThrow(string strategy, string document)
         {
             // Arrange
             var pipeline = PipelineFor(strategy, _tokenizer, maxTokens: 8);
 
             // Act
-            var chunks = pipeline.Chunk(document);
+            var chunks = await pipeline.ChunkAsync(document).ToListAsync();
 
             // Assert
             Assert.That(chunks, Is.Not.Empty);
@@ -294,13 +294,13 @@ namespace FluentChunker.Tests
         [TestCase(SentenceAware)]
         [TestCase(Recursive)]
         [TestCase(StructureAware)]
-        public void Chunk_EmptyDocument_DoesNotThrow(string strategy)
+        public async Task Chunk_EmptyDocument_DoesNotThrow(string strategy)
         {
             // Arrange
             var pipeline = PipelineFor(strategy, Conforming(), maxTokens: 8);
 
             // Act
-            var chunks = pipeline.Chunk(string.Empty);
+            var chunks = await pipeline.ChunkAsync(string.Empty).ToListAsync();
 
             // Assert
             Assert.That(chunks, Is.Empty);
@@ -310,13 +310,13 @@ namespace FluentChunker.Tests
         [TestCase(SentenceAware)]
         [TestCase(Recursive)]
         [TestCase(StructureAware)]
-        public void Chunk_SingleCharacterDocument_DoesNotThrow(string strategy)
+        public async Task Chunk_SingleCharacterDocument_DoesNotThrow(string strategy)
         {
             // Arrange
             var pipeline = PipelineFor(strategy, Conforming(), maxTokens: 8);
 
             // Act
-            var chunks = pipeline.Chunk("a");
+            var chunks = await pipeline.ChunkAsync("a").ToListAsync();
 
             // Assert
             Assert.That(chunks, Has.Count.EqualTo(1));
@@ -328,32 +328,32 @@ namespace FluentChunker.Tests
         [TestCase(SentenceAware)]
         [TestCase(Recursive)]
         [TestCase(StructureAware)]
-        public void Chunk_TokenizerNormalisesWithoutChangingLength_DoesNotThrow(string strategy)
+        public async Task Chunk_TokenizerNormalisesWithoutChangingLength_DoesNotThrow(string strategy)
         {
             // Arrange
             var pipeline = PipelineFor(strategy, Lowercasing(), maxTokens: 8);
 
             // Act
-            var chunks = pipeline.Chunk(MixedCaseDocument);
+            var chunks = await pipeline.ChunkAsync(MixedCaseDocument).ToListAsync();
 
             // Assert
             Assert.That(chunks, Is.Not.Empty);
         }
 
         [Test]
-        public void Chunk_TokenizerNormalisesWithoutChangingLength_KeepsChunksVerbatimSourceSlices()
+        public async Task Chunk_TokenizerNormalisesWithoutChangingLength_KeepsChunksVerbatimSourceSlices()
         {
             // Arrange
             var pipeline = PipelineFor(FixedSize, Lowercasing(), maxTokens: 8);
 
             // Act
-            var chunks = pipeline.Chunk(MixedCaseDocument);
+            var chunks = await pipeline.ChunkAsync(MixedCaseDocument).ToListAsync();
 
             // Assert
             Assert.That(chunks, Is.Not.Empty);
             using (Assert.EnterMultipleScope())
             {
-                Assert.That(chunks.Where(c => MixedCaseDocument.Substring(c.SourceStart, c.SourceLength) != c.Text), Is.Empty);
+                Assert.That(chunks.Where(c => c.SliceOf(MixedCaseDocument) != c.Text), Is.Empty);
                 Assert.That(string.Concat(chunks.Select(c => c.Text)), Is.EqualTo(MixedCaseDocument), "the normalisation must not reach the emitted text");
                 Assert.That(chunks[^1].SourceStart + chunks[^1].SourceLength, Is.EqualTo(MixedCaseDocument.Length));
             }

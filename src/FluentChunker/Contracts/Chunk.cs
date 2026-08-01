@@ -31,10 +31,11 @@ namespace FluentChunker.Contracts
         /// Index in the source document where <see cref="Text"/> begins, or -1 when the chunker does not track it.
         /// </summary>
         /// <remarks>
-        /// Every built-in strategy reports a real value, and <c>document.Substring(SourceStart, SourceLength)</c> returns <see cref="Text"/> exactly.
+        /// Every built-in strategy reports a real value, and <see cref="SliceOf"/> returns <see cref="Text"/> exactly.
         /// With overlap configured, consecutive chunks deliberately cover overlapping ranges.
+        /// The type is <see cref="long"/> because positions in streamed sources can exceed <see cref="int.MaxValue"/>; an in-memory document never does.
         /// </remarks>
-        public int SourceStart { get; init; } = -1;
+        public long SourceStart { get; init; } = -1;
 
         /// <summary>
         /// Length of <see cref="Text"/> in the source document, or -1 when the chunker does not track it.
@@ -43,6 +44,25 @@ namespace FluentChunker.Contracts
         /// Always equal to <c>Text.Length</c> for the built-in strategies, since every chunk they produce is a verbatim slice of the document.
         /// </remarks>
         public int SourceLength { get; init; } = -1;
+
+        /// <summary>
+        /// Returns the slice of <paramref name="document"/> this chunk was cut from, the verification idiom for source offsets.
+        /// Equal to <see cref="Text"/> for every built-in strategy.
+        /// </summary>
+        /// <param name="document">The document the chunk was produced from.</param>
+        /// <returns>The verbatim source slice.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="document"/> is null.</exception>
+        /// <exception cref="InvalidOperationException">The chunk does not track source offsets, meaning <see cref="SourceStart"/> or <see cref="SourceLength"/> is -1.</exception>
+        public string SliceOf(string document)
+        {
+            ArgumentNullException.ThrowIfNull(document);
+
+            if (SourceStart < 0 || SourceLength < 0)
+                throw new InvalidOperationException("This chunk does not track source offsets, so no slice of the document corresponds to it.");
+
+            // Positions beyond the int range can only come from streamed sources, which cannot be sliced through an in-memory string anyway, so the narrowing is safe by construction.
+            return document.Substring((int)SourceStart, SourceLength);
+        }
 
         /// <summary>
         /// Pipeline-level and document-level metadata, merged, with document values winning.

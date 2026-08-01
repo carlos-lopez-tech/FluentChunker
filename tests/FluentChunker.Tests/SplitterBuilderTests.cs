@@ -61,7 +61,7 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void WithMaxTokenSize_ExactlyFourTokens_IsAccepted()
+        public async Task WithMaxTokenSize_ExactlyFourTokens_IsAccepted()
         {
             // Arrange - four is the smallest budget that always holds a single character
             var splitterStep = ChunkingPipeline.CreateBuilder()
@@ -75,7 +75,7 @@ namespace FluentChunker.Tests
                 .Build();
 
             // Assert
-            Assert.That(pipeline.Chunk("Alpha beta gamma delta epsilon zeta."), Is.Not.Empty);
+            Assert.That(await pipeline.ChunkAsync("Alpha beta gamma delta epsilon zeta.").ToListAsync(), Is.Not.Empty);
         }
 
         [Test]
@@ -156,7 +156,7 @@ namespace FluentChunker.Tests
         // At MaxTokenSize(6), "Vgl." (3 tokens) and " Abschnitt 3 im Buch." (6 tokens, gap-inclusive) don't fit together (3+6 > 6), so without the abbreviation guard the splitter treats "Vgl." as its own sentence and the first chunk is exactly "Vgl.".
         // Registering "Vgl" as an abbreviation suppresses that false break, merging it into "Vgl. Abschnitt 3 im Buch." (9 tokens) which then no longer fits the 6-token budget as a single unit and falls back to fixed-size windowing, proving the guard changed the chunker's actual segmentation.
         [Test]
-        public void UseSplitter_CustomAbbreviationConfigured_SuppressesMatchingSentenceBreak()
+        public async Task UseSplitter_CustomAbbreviationConfigured_SuppressesMatchingSentenceBreak()
         {
             // Arrange
             var text = "Vgl. Abschnitt 3 im Buch. Weiter geht es.";
@@ -175,8 +175,8 @@ namespace FluentChunker.Tests
                 .Build();
 
             // Act
-            var unguardedResult = unguardedPipeline.Chunk(text);
-            var guardedResult = guardedPipeline.Chunk(text);
+            var unguardedResult = await unguardedPipeline.ChunkAsync(text).ToListAsync();
+            var guardedResult = await guardedPipeline.ChunkAsync(text).ToListAsync();
 
             using (Assert.EnterMultipleScope())
             {
@@ -188,7 +188,7 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void UseSplitter_CustomAbbreviationWithTrailingDot_IsNormalizedAndSuppressesMatchingSentenceBreak()
+        public async Task UseSplitter_CustomAbbreviationWithTrailingDot_IsNormalizedAndSuppressesMatchingSentenceBreak()
         {
             // Arrange
             var text = "Vgl. Abschnitt 3 im Buch. Weiter geht es.";
@@ -201,7 +201,7 @@ namespace FluentChunker.Tests
                 .Build();
 
             // Act
-            var result = pipeline.Chunk(text);
+            var result = await pipeline.ChunkAsync(text).ToListAsync();
 
             // Assert - same suppressed break as the no-dot case, proving trailing-dot normalization
             Assert.That(result[0].Text, Is.Not.EqualTo("Vgl."));
@@ -209,7 +209,7 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void UseSplitter_SentenceAwarePipeline_ProducesSentenceAlignedChunks()
+        public async Task UseSplitter_SentenceAwarePipeline_ProducesSentenceAlignedChunks()
         {
             // Arrange
             var pipeline = ChunkingPipeline.CreateBuilder()
@@ -222,7 +222,7 @@ namespace FluentChunker.Tests
                        "Cats watch quietly from the roof.";
 
             // Act
-            var result = pipeline.Chunk(text);
+            var result = await pipeline.ChunkAsync(text).ToListAsync();
 
             // Assert
             Assert.That(result, Has.Count.GreaterThan(1));
@@ -265,7 +265,7 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void UseSplitter_RecursivePipeline_ProducesStructureAlignedChunks()
+        public async Task UseSplitter_RecursivePipeline_ProducesStructureAlignedChunks()
         {
             // Arrange - two paragraphs of two sentences each; a 15-token budget forces each paragraph to descend to its sentences
             var pipeline = ChunkingPipeline.CreateBuilder()
@@ -278,7 +278,7 @@ namespace FluentChunker.Tests
                        "Cats watch quietly from the roof. Birds sing their morning songs.";
 
             // Act
-            var result = pipeline.Chunk(text);
+            var result = await pipeline.ChunkAsync(text).ToListAsync();
 
             // Assert - chunks align with structural boundaries and respect the budget
             Assert.That(result, Has.Count.GreaterThan(1));
@@ -350,7 +350,7 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void UseSplitter_StructureAwarePipeline_StampsHeadingPathOnEveryChunk()
+        public async Task UseSplitter_StructureAwarePipeline_StampsHeadingPathOnEveryChunk()
         {
             // Arrange
             var pipeline = ChunkingPipeline.CreateBuilder()
@@ -365,7 +365,7 @@ namespace FluentChunker.Tests
                        "The group compared results from the two search systems.";
 
             // Act
-            var result = pipeline.Chunk(text);
+            var result = await pipeline.ChunkAsync(text).ToListAsync();
 
             // Assert - one chunk per section (hard seams), each carrying its breadcrumb
             Assert.That(result, Has.Count.EqualTo(2));

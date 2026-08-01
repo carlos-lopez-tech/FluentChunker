@@ -34,14 +34,14 @@ namespace FluentChunker.Tests
         ];
 
         [Test]
-        public void Chunk_ChineseDocument_EndsEveryChunkOnASentenceBoundary()
+        public async Task Chunk_ChineseDocument_EndsEveryChunkOnASentenceBoundary()
         {
             // Arrange - the fallback cut mid-sentence on token counts; real boundaries end on the full stop.
             var pipeline = ChunkingPipeline.CreateBuilder().UseTokenizer(_tokenizer)
                 .UseSplitter(s => s.WithSentenceAwareChunking().WithMaxTokenSize(15)).Build();
 
             // Act
-            var result = pipeline.Chunk(ChineseDocument);
+            var result = await pipeline.ChunkAsync(ChineseDocument).ToListAsync();
 
             // Assert
             Assert.That(result, Has.Count.GreaterThan(1));
@@ -54,14 +54,14 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Chunk_HindiDocument_EndsEveryChunkOnADanda()
+        public async Task Chunk_HindiDocument_EndsEveryChunkOnADanda()
         {
             // Arrange
             var pipeline = ChunkingPipeline.CreateBuilder().UseTokenizer(_tokenizer)
                 .UseSplitter(s => s.WithSentenceAwareChunking().WithMaxTokenSize(30)).Build();
 
             // Act
-            var result = pipeline.Chunk(HindiDocument);
+            var result = await pipeline.ChunkAsync(HindiDocument).ToListAsync();
 
             // Assert
             Assert.That(result, Has.Count.GreaterThan(1));
@@ -71,7 +71,7 @@ namespace FluentChunker.Tests
         [TestCase(15)]
         [TestCase(25)]
         [TestCase(40)]
-        public void Chunk_NonLatinDocumentsAcrossSplitterAwareStrategies_KeepEveryChunkWithinBudget(int maxTokens)
+        public async Task Chunk_NonLatinDocumentsAcrossSplitterAwareStrategies_KeepEveryChunkWithinBudget(int maxTokens)
         {
             // Arrange
             var pipelines = SplitterAwarePipelines(maxTokens);
@@ -82,7 +82,7 @@ namespace FluentChunker.Tests
             {
                 foreach (var document in new[] { ChineseDocument, HindiDocument, MixedDocument })
                 {
-                    overBudget.AddRange(pipeline.Chunk(document)
+                    overBudget.AddRange((await pipeline.ChunkAsync(document).ToListAsync())
                         .Select(c => _tokenizer.CountTokens(c.Text))
                         .Where(count => count > maxTokens));
                 }
@@ -93,14 +93,14 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Chunk_MixedScriptDocument_SplitsAtBothLatinAndIdeographicBoundaries()
+        public async Task Chunk_MixedScriptDocument_SplitsAtBothLatinAndIdeographicBoundaries()
         {
             // Arrange - a budget that forces a split but leaves each sentence comfortably intact.
             var pipeline = ChunkingPipeline.CreateBuilder().UseTokenizer(_tokenizer)
                 .UseSplitter(s => s.WithSentenceAwareChunking().WithMaxTokenSize(12)).Build();
 
             // Act
-            var result = pipeline.Chunk(MixedDocument);
+            var result = await pipeline.ChunkAsync(MixedDocument).ToListAsync();
 
             // Assert
             Assert.That(result, Has.Count.GreaterThan(1));

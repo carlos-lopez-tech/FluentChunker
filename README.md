@@ -13,7 +13,7 @@
 [![Stars](https://img.shields.io/github/stars/carlos-lopez-tech/FluentChunker)](https://github.com/carlos-lopez-tech/FluentChunker/stargazers)
 [![Open issues](https://img.shields.io/github/issues/carlos-lopez-tech/FluentChunker)](https://github.com/carlos-lopez-tech/FluentChunker/issues)
 
-Production-ready fluent document chunking for .NET.
+Production-ready fluent document chunking for .NET  
 Build composable document chunking pipelines for RAG, embeddings, semantic search, vector databases, and AI applications with an intuitive fluent, step-by-step builder API.
 
 [Features](#features) • [Quick Start](#quick-start) • [Installation](#installation) • [Usage Examples](#usage-examples) • [Tokenizers](#tokenizers) • [API Reference](#api-reference) • [Requirements](#requirements) • [Development](#development) • [License](#license)
@@ -29,7 +29,8 @@ Build composable document chunking pipelines for RAG, embeddings, semantic searc
 - **Size against your embedding model, not just OpenAI**: Chunk with the tokenizer that will actually embed the text by passing any `Microsoft.ML.Tokenizers.Tokenizer` instance: BERT and WordPiece (BGE, E5), SentencePiece (Nomic, Qwen) and the Llama family. Or implement `ITokenizer` yourself. `cl100k_base` ships in the box. See [Sizing against a non-OpenAI model](#sizing-against-a-non-openai-model)
 - **Overlap support**: Configure token overlap between chunks to preserve context; overlap is budgeted inside the max token size, so no chunk ever exceeds it
 - **Source offsets**: Every chunk reports where it came from, so results can be cited or highlighted in the original document
-- **Two metadata scopes**: Attach pipeline-level metadata (constant per run) and document-level metadata (per `Chunk` call) to each chunk
+- **Streaming, cancellable API**: chunks are produced lazily as `IAsyncEnumerable<Chunk>` — the first chunk is available before the last one is cut — with `CancellationToken` support end to end. See [Streaming and Cancellation](#streaming-and-cancellation)
+- **Two metadata scopes**: Attach pipeline-level metadata (constant per run) and document-level metadata (per `ChunkAsync` call) to each chunk
 - **Value-equal chunks**: `Chunk` is a true value object: deduplicate with `Distinct()`, key caches by chunk, and assert whole chunks in tests; metadata participates in equality
 - **Reusable pipelines**: Build once, execute against many documents; metadata never leaks between calls
 
@@ -57,9 +58,7 @@ var pipeline = ChunkingPipeline.CreateBuilder()
     })
     .Build();
 
-var chunks = pipeline.Chunk(largeDocument);
-
-foreach (var chunk in chunks)
+await foreach (var chunk in pipeline.ChunkAsync(largeDocument, cancellationToken))
 {
     Console.WriteLine($"Chunk {chunk.Index}: {chunk.Text.Length} chars, {chunk.TokenCount} tokens");
     Console.WriteLine($"  Source: {chunk.Metadata["Source"].GetString()}");
@@ -67,11 +66,39 @@ foreach (var chunk in chunks)
 }
 ```
 
+Need the chunks as a list? `var chunks = await pipeline.ChunkAsync(document, cancellationToken).ToListAsync(cancellationToken);` — `ToListAsync` is in the box on .NET 10; on .NET 8 add the official [`System.Linq.AsyncEnumerable`](https://www.nuget.org/packages/System.Linq.AsyncEnumerable/) package. (The community `System.Linq.Async` package is deprecated — do not use it.)
+
 ## Installation
 
 ```bash
 dotnet add package FluentChunker
 ```
+
+## Migrating from 1.x to 2.0.0
+
+2.0.0 removes the synchronous API. `ChunkingPipeline.Chunk(...)` is replaced by `ChunkAsync(...)`, which streams chunks as an `IAsyncEnumerable<Chunk>` and accepts a `CancellationToken`.
+
+```csharp
+// 1.x
+var chunks = pipeline.Chunk(document);
+
+// 2.0 — stream (the first chunk is available before the last one is cut)
+await foreach (var chunk in pipeline.ChunkAsync(document, cancellationToken))
+{
+    // ...
+}
+
+// 2.0 — batch, when you really need a list
+var chunks = await pipeline.ChunkAsync(document, cancellationToken).ToListAsync(cancellationToken);
+```
+
+On .NET 10, `ToListAsync` is part of the BCL. On .NET 8, add the official `System.Linq.AsyncEnumerable` package.
+
+Three more changes to know about:
+
+- Custom `IChunker` implementations move with it: `IReadOnlyList<Chunk> Chunk(string text)` becomes `IAsyncEnumerable<Chunk> ChunkAsync(string text, CancellationToken cancellationToken = default)`. Chunking is CPU-bound, so a synchronous core wrapped in an async iterator is the expected shape; there is nothing to push onto the thread pool.
+- `Chunk.SourceStart` is now a `long` (streamed sources in a future release can exceed `int.MaxValue`). Verify a chunk against its source with `chunk.SliceOf(document)` instead of `document.Substring(...)` — it returns `chunk.Text` exactly for every built-in strategy and throws `InvalidOperationException` if the chunk does not track offsets.
+- The tokenizer round-trip guard (`InvalidOperationException` for a tokenizer whose decode drifts from the source) now surfaces while the chunk stream is enumerated — at the `await foreach` or the `ToListAsync` — rather than at the `ChunkAsync` call itself, because that is where the chunks are produced.
 
 ## Usage Examples
 
@@ -87,7 +114,7 @@ var pipeline = ChunkingPipeline.CreateBuilder()
         .WithMaxTokenSize(1024))
     .Build();
 
-var chunks = pipeline.Chunk(text);
+var chunks = await pipeline.ChunkAsync(text, cancellationToken).ToListAsync(cancellationToken);
 ```
 
 ### Chunking with Overlap
@@ -103,7 +130,7 @@ var pipeline = ChunkingPipeline.CreateBuilder()
         .WithOverlap(128))
     .Build();
 
-var chunks = pipeline.Chunk(text);
+var chunks = await pipeline.ChunkAsync(text, cancellationToken).ToListAsync(cancellationToken);
 ```
 
 ### Sentence-Aware Chunking
@@ -120,16 +147,23 @@ var pipeline = ChunkingPipeline.CreateBuilder()
         .AddAbbreviations("Vgl.", "sog."))   // optional, additive to the built-in list
     .Build();
 
-var chunks = pipeline.Chunk(document);
+var chunks = await pipeline.ChunkAsync(document, cancellationToken).ToListAsync(cancellationToken);
 ```
 
-Chunks contain whole sentences and are verbatim slices of the source text: whitespace and paragraph breaks between packed sentences are preserved exactly, not re-joined or trimmed. Every chunk's `TokenCount` stays within the configured max at any max token size of 4 or above: a sentence that alone exceeds the budget is split into evenly-sized token windows as a fallback (with `OverlapCount = 0` on those windows). Fallback windows are sliced from the source like every other chunk, and every boundary lands on a cut that does not fall inside a character, so the windows reconstruct the sentence exactly. Do not trim them before joining.
+Chunks contain whole sentences and are verbatim slices of the source text: whitespace and paragraph breaks between packed sentences are preserved exactly, not re-joined or trimmed.  
+Every chunk's `TokenCount` stays within the configured max at any max token size of 4 or above: a sentence that alone exceeds the budget is split into evenly-sized token windows as a fallback (with `OverlapCount = 0` on those windows).  
+Fallback windows are sliced from the source like every other chunk, and every boundary lands on a cut that does not fall inside a character, so the windows reconstruct the sentence exactly. Do not trim them before joining.
 
 `WithOverlap(n)` carries whole trailing sentences into the next chunk, as many as fit within `n` tokens. `OverlapCount` reports the tokens carried *into* a chunk (0 on the first chunk), the same semantics both strategies use.
 
-**Language support:** works with no configuration for bicameral scripts (Latin, Greek, Cyrillic) using `. ! ?`, and for caseless scripts, where a letter with no case counts as a valid sentence start. Recognized terminators are `. ! ?`, the Arabic question mark `؟`, the Urdu full stop `۔`, the Devanagari danda `।` and double danda `॥`, and the fullwidth forms `。 ！ ？ ．`. The fullwidth forms end a sentence unconditionally, since CJK is written without spaces between sentences. This covers Chinese, Japanese, Hindi, Urdu, Arabic, Hebrew and Thai alongside the European languages, including a passage of one script quoted inside a document written in another. Uppercase detection is Unicode-aware, and `¿ ¡ « „` are recognized as valid sentence openers (Spanish/French/German). A built-in abbreviation guard covers common EN/DE/FR/ES abbreviations (`Dr`, `Mr`, `Nr`, `bzw`, `M`, `Sra`, etc.); extend it with `.AddAbbreviations(...)`; entries may include a trailing dot, and matching is case-insensitive.
+**Language support:** works with no configuration for bicameral scripts (Latin, Greek, Cyrillic) using `. ! ?`, and for caseless scripts, where a letter with no case counts as a valid sentence start.  
+Recognized terminators are `. ! ?`, the Arabic question mark `؟`, the Urdu full stop `۔`, the Devanagari danda `।` and double danda `॥`, and the fullwidth forms `。 ！ ？ ．`. The fullwidth forms end a sentence unconditionally, since CJK is written without spaces between sentences. This covers Chinese, Japanese, Hindi, Urdu, Arabic, Hebrew and Thai alongside the European languages, including a passage of one script quoted inside a document written in another.  
+Uppercase detection is Unicode-aware, and `¿ ¡ « „` are recognized as valid sentence openers (Spanish/French/German). A built-in abbreviation guard covers common EN/DE/FR/ES abbreviations (`Dr`, `Mr`, `Nr`, `bzw`, `M`, `Sra`, etc.); extend it with `.AddAbbreviations(...)`; entries may include a trailing dot, and matching is case-insensitive.
 
-**Known limitations:** German ordinal periods (e.g. "am 3. Oktober") are falsely split; no code disambiguates them from sentence ends. The ellipsis `…` is not treated as a terminator, since it is at least as often mid-sentence as sentence-ending. CJK quote brackets (`」』】》`) are not kept attached to the sentence they close, so a closing bracket starts the following sentence. Thai has no sentence terminator of its own, so Thai text splits only where other punctuation appears.
+**Known limitations:** German ordinal periods (e.g. "am 3. Oktober") are falsely split; no code disambiguates them from sentence ends.  
+The ellipsis `…` is not treated as a terminator, since it is at least as often mid-sentence as sentence-ending.  
+CJK quote brackets (`」』】》`) are not kept attached to the sentence they close, so a closing bracket starts the following sentence.  
+Thai has no sentence terminator of its own, so Thai text splits only where other punctuation appears.
 
 ### Recursive Chunking
 
@@ -145,14 +179,18 @@ var pipeline = ChunkingPipeline.CreateBuilder()
         .AddAbbreviations("Vgl.", "sog."))   // optional, feeds the sentence tier
     .Build();
 
-var chunks = pipeline.Chunk(document);
+var chunks = await pipeline.ChunkAsync(document, cancellationToken).ToListAsync(cancellationToken);
 ```
 
-The document is split along a fixed hierarchy of structural separators: **paragraphs** (blank-line separated), then **lines**, then **sentences** (using the same abbreviation-aware detection as sentence-aware chunking), then **balanced token windows** as a last resort. Only a unit that *alone* exceeds the max token size descends to the next level; adjacent small units are packed together up to the budget. Chunks never merge across a descent boundary: a small paragraph before or after an oversized one always stays in its own chunk, so every chunk respects the largest structural boundary possible.
+The document is split along a fixed hierarchy of structural separators: **paragraphs** (blank-line separated), then **lines**, then **sentences** (using the same abbreviation-aware detection as sentence-aware chunking), then **balanced token windows** as a last resort.  
+Only a unit that *alone* exceeds the max token size descends to the next level; adjacent small units are packed together up to the budget.  
+Chunks never merge across a descent boundary: a small paragraph before or after an oversized one always stays in its own chunk, so every chunk respects the largest structural boundary possible.
 
 Chunks are verbatim slices of the source (interior line breaks preserved), token-window fallback chunks included, since every boundary lands on a cut that does not fall inside a character, exactly like the sentence-aware fallback.
 
-`WithOverlap(n)` carries whole trailing units (paragraphs, lines or sentences) into the next chunk, as many as fit within `n` tokens. Overlap applies *within* a packing run and **resets to zero at every structural seam** (before the first chunk inside an oversized unit, after the last one, and around token-window fallbacks), so carried context always comes from the same structural region. `OverlapCount` reports the tokens carried *into* a chunk (0 on the first chunk and wherever a seam resets it).
+`WithOverlap(n)` carries whole trailing units (paragraphs, lines or sentences) into the next chunk, as many as fit within `n` tokens.  
+Overlap applies *within* a packing run and **resets to zero at every structural seam** (before the first chunk inside an oversized unit, after the last one, and around token-window fallbacks), so carried context always comes from the same structural region.  
+`OverlapCount` reports the tokens carried *into* a chunk (0 on the first chunk and wherever a seam resets it).
 
 ### Structure-Aware Chunking (Markdown)
 
@@ -167,19 +205,90 @@ var pipeline = ChunkingPipeline.CreateBuilder()
         .AddAbbreviations("Vgl.", "sog."))   // optional, feeds the sentence descent
     .Build();
 
-var chunks = pipeline.Chunk(markdownDocument);
-
-foreach (var chunk in chunks)
+await foreach (var chunk in pipeline.ChunkAsync(markdownDocument, cancellationToken))
 {
     Console.WriteLine($"[{chunk.Metadata["headingPath"].GetString()}] {chunk.Text[..Math.Min(60, chunk.Text.Length)]}");
 }
 ```
 
-Designed for Markdown content: every heading (ATX `#`..`######` or Setext underline) starts a new section, and **sections are hard boundaries**: a chunk never spans two sections, even small neighboring ones. Every chunk carries its heading breadcrumb in `Metadata["headingPath"]` (heading texts joined with `" > "`, empty for content before the first heading), a reserved key for this strategy. Code fences, tables, lists and quotes are atomic: never split while they fit the budget, so a fence containing blank lines stays whole where recursive chunking's paragraph tier would cut it. An oversized paragraph descends to whole sentences; oversized atomic blocks and single sentences fall back to balanced token windows (sliced from the source, like the other strategies' fallbacks).
+Designed for Markdown content: every heading (ATX `#`..`######` or Setext underline) starts a new section, and **sections are hard boundaries**: a chunk never spans two sections, even small neighboring ones.  
+Every chunk carries its heading breadcrumb in `Metadata["headingPath"]` (heading texts joined with `" > "`, empty for content before the first heading), a reserved key for this strategy.  
+Code fences, tables, lists and quotes are atomic: never split while they fit the budget, so a fence containing blank lines stays whole where recursive chunking's paragraph tier would cut it.  
+An oversized paragraph descends to whole sentences; oversized atomic blocks and single sentences fall back to balanced token windows (sliced from the source, like the other strategies' fallbacks).
 
 **No overlap by design:** structure is the sole boundary authority, so this strategy's builder path does not offer `WithOverlap` (misuse is a compile error) and `OverlapCount` is always `0`. Use recursive or sentence-aware chunking when overlap continuity matters.
 
-**Plain text degrades gracefully** (Markdown is a superset of plain text, so nothing throws): the whole document becomes one heading-less section packed by paragraphs, with an empty `headingPath` on every chunk, which doubles as the "no structure found" signal. For plain-text corpora, `WithRecursiveChunking()` is the better choice; route by file type in your ingestion code, as the sample project does (`testfile.md` → structure-aware, `testfile.txt` → the other strategies).
+**Plain text degrades gracefully** (Markdown is a superset of plain text, so nothing throws): the whole document becomes one heading-less section packed by paragraphs, with an empty `headingPath` on every chunk, which doubles as the "no structure found" signal.  
+For plain-text corpora, `WithRecursiveChunking()` is the better choice; route by file type in your ingestion code, as the sample project does (`testfile.md` → structure-aware, `testfile.txt` → the other strategies).
+
+### Streaming and Cancellation
+
+Chunks are produced lazily, so the token is what bounds the work: pass it to `ChunkAsync` and the pipeline stops between chunks instead of running the document to completion.
+
+```csharp
+var pipeline = ChunkingPipeline.CreateBuilder()
+    .UseTokenizer(tokenizer)
+    .UseSplitter(s => s
+        .WithRecursiveChunking()
+        .WithMaxTokenSize(512))
+    .Build();
+
+// Embedding each chunk as it is cut, rather than waiting for the whole document to be split.
+await foreach (var chunk in pipeline.ChunkAsync(document, cancellationToken))
+{
+    await index.UpsertAsync(chunk, cancellationToken);
+}
+```
+
+With document-level metadata the token comes last, after the metadata callback:
+
+```csharp
+await foreach (var chunk in pipeline.ChunkAsync(doc.Markdown, meta => meta.Set("Url", doc.Url), cancellationToken))
+{
+    // ...
+}
+```
+
+Batching takes it in both places, once for the chunking and once for the buffering:
+
+```csharp
+var chunks = await pipeline.ChunkAsync(document, cancellationToken).ToListAsync(cancellationToken);
+```
+
+When the stream is handed to a layer that owns its own token, `WithCancellation` works too, and composes with any token already given to `ChunkAsync`:
+
+```csharp
+IAsyncEnumerable<Chunk> stream = pipeline.ChunkAsync(document);
+
+await foreach (var chunk in stream.WithCancellation(cancellationToken))
+{
+    // ...
+}
+```
+
+**What cancelling does.** The token is observed before every chunk, and `OperationCanceledException` is thrown from the enumeration, not from the `ChunkAsync` call, because that call only builds the stream. A token that is already cancelled throws before the first chunk is cut, even for a document that would produce none.  
+A token cancelled mid-enumeration stops the stream before the next chunk, and the chunks already yielded remain valid: nothing is buffered, rolled back, or half-written.
+
+**How quickly it takes effect, and where it does not.** Every strategy tokenizes, splits or parses the whole document before it can cut the first chunk, and on a large document that pass is most of the wait for the first chunk.  
+The token is observed inside it, so what bounds cancellation is not the length of the pass but the longest span within it that has no check. Those spans are calls into a tokenizer or a parser that cannot be entered:
+
+| Strategy | Upfront pass | Longest span with no cancellation check |
+|---|---|---|
+| Fixed-size | tokenize the whole document | one encode batch, **~7 ms** |
+| Sentence-aware | find sentence boundaries, then size each sentence | the boundary scan, **~5 ms** |
+| Recursive | find paragraph boundaries, then size each paragraph | the boundary scan, **~1 ms** |
+| Structure-aware | parse the Markdown, then size each block | **the Markdig parse**, tens to hundreds of ms |
+
+Indicative figures for a 2 MB document with `cl100k_base` (Release, .NET 10); absolute timings vary widely by machine and run, the ordering does not.  
+Three of the four are bounded by work whose size does not grow with the document: fixed-size batches are capped by token count, and the two boundary scans are single passes over the text. Structure-aware is the exception, because [Markdig](https://github.com/xoofx/markdig) parses a document in one call that has no way to report progress or accept a token, and that parse grows with the document.  
+The fixed-size row assumes the built-in `MicrosoftMLTokenizerAdapter`, which can be asked for a bounded number of tokens at a time. A custom [`ITokenizer`](#custom-tokenizers) offers only a whole-document `Encode`, so fixed-size chunking calls it once and that call is then the uninterruptible span, growing with the document.  
+Cancelling *before* enumeration begins costs nothing in any strategy: the work is lazy, so a token already cancelled when the first `MoveNextAsync` runs skips the upfront pass entirely rather than completing it and discarding the result. Once chunks are flowing, the token is checked before each one, which is a sub-millisecond gap for every strategy.
+
+**Cancel at document granularity for Markdown.** For a hard bound such as a request timeout on structure-aware chunking, make one document the unit of work and cancel between documents, or cap document size at ingestion.  
+A multi-MB Markdown document cannot be abandoned in less time than its parse takes.
+
+**Chunking never yields the thread.** The work is CPU-bound, so `MoveNextAsync` completes synchronously and `await foreach` does not return control to the caller between chunks: there is no I/O to await, and nothing is pushed onto the thread pool on your behalf.  
+On a UI thread or inside a request handler, wrap the enumeration in `Task.Run` when a large document would block something that matters.
 
 ### Source Offsets (Citation and Highlighting)
 
@@ -188,18 +297,19 @@ cited, highlighted in place, or re-ranked against its surrounding text without s
 for the chunk text.
 
 ```csharp
-foreach (var chunk in pipeline.Chunk(document))
+await foreach (var chunk in pipeline.ChunkAsync(document, cancellationToken))
 {
     // The offsets point back into the document the chunk came from.
-    var original = document.Substring(chunk.SourceStart, chunk.SourceLength);
+    var original = chunk.SliceOf(document);
     Console.WriteLine($"[{chunk.SourceStart}..{chunk.SourceStart + chunk.SourceLength}] {chunk.Text}");
 }
 ```
 
-`document.Substring(chunk.SourceStart, chunk.SourceLength)` returns `chunk.Text` exactly, for every
-strategy and every input. With overlap configured, consecutive chunks deliberately cover overlapping
-ranges. Both properties are `-1` on a chunk produced by an `IChunker` implemented outside this
-library that does not track them.
+`chunk.SliceOf(document)` returns `chunk.Text` exactly, for every strategy and every input. With
+overlap configured, consecutive chunks deliberately cover overlapping ranges. `SourceStart` is a
+`long` because positions in streamed sources can exceed `int.MaxValue`; both properties are `-1` on
+a chunk produced by an `IChunker` implemented outside this library that does not track them, and
+`SliceOf` then throws `InvalidOperationException` instead of slicing garbage.
 
 ### Adding Custom Metadata
 
@@ -218,9 +328,7 @@ var pipeline = ChunkingPipeline.CreateBuilder()
     })
     .Build();
 
-var chunks = pipeline.Chunk(largeDocument);
-
-foreach (var chunk in chunks)
+await foreach (var chunk in pipeline.ChunkAsync(largeDocument, cancellationToken))
 {
     Console.WriteLine($"Chunk {chunk.Index}: {chunk.TokenCount} tokens");
     Console.WriteLine($"  Source: {chunk.Metadata["Source"].GetString()}");
@@ -230,7 +338,7 @@ foreach (var chunk in chunks)
 
 ### Per-Document Metadata (Reusing One Pipeline)
 
-Pipeline-level metadata (`AddMetadata`) is constant for the whole run; document-level metadata is passed per `Chunk` call. On key collision, the document value wins.
+Pipeline-level metadata (`AddMetadata`) is constant for the whole run; document-level metadata is passed per `ChunkAsync` call. On key collision, the document value wins.
 
 ```csharp
 var tokenizer = new MicrosoftMLTokenizerAdapter("cl100k_base");
@@ -246,12 +354,17 @@ var pipeline = ChunkingPipeline.CreateBuilder()
 
 foreach (var doc in documents)
 {
-    var chunks = pipeline.Chunk(doc.Markdown, meta =>     // per document
+    var chunks = pipeline.ChunkAsync(doc.Markdown, meta =>     // per document
     {
         meta.Set("Url", doc.Url);
         meta.Set("Title", doc.Title);
         meta.Set("CreatedAt", DateTime.UtcNow);
-    });
+    }, cancellationToken);
+
+    await foreach (var chunk in chunks)
+    {
+        // ...
+    }
 }
 ```
 
@@ -292,7 +405,8 @@ Need a different tokenizer? Pass any `Microsoft.ML.Tokenizers.Tokenizer` instanc
 
 #### Choosing an encoding
 
-**Pick the encoding of the model that consumes the chunks.** In a RAG pipeline that is usually two different models: you size chunks against the *embedding* model when indexing, and against the *chat* model when assembling a prompt from retrieved chunks. The counts are not interchangeable: the same text can differ by roughly 10% between encodings, in either direction, which is enough to push prose chunked to 8,000 tokens past the 8,191 token limit of `text-embedding-3-large`.
+**Pick the encoding of the model that consumes the chunks.** In a RAG pipeline that is usually two different models: you size chunks against the *embedding* model when indexing, and against the *chat* model when assembling a prompt from retrieved chunks.  
+The counts are not interchangeable: the same text can differ by roughly 10% between encodings, in either direction, which is enough to push prose chunked to 8,000 tokens past the 8,191 token limit of `text-embedding-3-large`.
 
 | Encoding | Use it when your chunks feed | Included? |
 |---|---|---|
@@ -308,7 +422,8 @@ Any other encoding needs its own `Microsoft.ML.Tokenizers.Data.*` package refere
 
 #### Non-Latin scripts cost 2x to 5x more tokens
 
-**A `maxTokens` value chosen against English is too small for most other scripts.** Tiktoken encodings are trained predominantly on English, so the same content costs far more tokens elsewhere. The same sentence, "This is a sentence about the weather today.", translated into each script and counted with `cl100k_base`:
+**A `maxTokens` value chosen against English is too small for most other scripts.** Tiktoken encodings are trained predominantly on English, so the same content costs far more tokens elsewhere.  
+The same sentence, "This is a sentence about the weather today.", translated into each script and counted with `cl100k_base`:
 
 | Script | chars | tokens | tokens/char | vs English |
 |---|---|---|---|---|
@@ -328,9 +443,14 @@ Any other encoding needs its own `Microsoft.ML.Tokenizers.Data.*` package refere
 
 Greek and Russian are affected too, which is easy to overlook because both are cased alphabetic scripts that read as "close to Latin".
 
-**What goes wrong if you ignore this.** Sentence-aware, recursive and structure-aware chunking pack whole units into each chunk. A unit that alone exceeds the budget cannot be packed, so it falls back to token windows, which cut mid-sentence and mid-word. Set `WithMaxTokenSize(64)` and you get clean one-sentence chunks in English; feed the same pipeline Hindi, where a typical sentence costs 4.8x more, and sentences start exceeding the budget on their own and come back fragmented. That is the fallback doing its job, not a detection failure. Sentence detection itself works across these scripts without configuration.
+**What goes wrong if you ignore this.** Sentence-aware, recursive and structure-aware chunking pack whole units into each chunk.  
+A unit that alone exceeds the budget cannot be packed, so it falls back to token windows, which cut mid-sentence and mid-word.  
+Set `WithMaxTokenSize(64)` and you get clean one-sentence chunks in English; feed the same pipeline Hindi, where a typical sentence costs 4.8x more, and sentences start exceeding the budget on their own and come back fragmented.  
+That is the fallback doing its job, not a detection failure.  
+Sentence detection itself works across these scripts without configuration.
 
-**What to do.** Scale `maxTokens` by the multiplier for your corpus rather than reusing an English-derived value, and make sure the budget comfortably exceeds your longest single sentence in the target script. Sized that way, sentence-aware chunking reproduces sentence boundaries exactly in Chinese, Japanese, Hindi, Arabic, Hebrew, Urdu, Greek and Russian. Note that this is a budget concern only: no chunk ever exceeds `maxTokens`, in any script.
+**What to do.** Scale `maxTokens` by the multiplier for your corpus rather than reusing an English-derived value, and make sure the budget comfortably exceeds your longest single sentence in the target script.  
+Sized that way, sentence-aware chunking reproduces sentence boundaries exactly in Chinese, Japanese, Hindi, Arabic, Hebrew, Urdu, Greek and Russian. Note that this is a budget concern only: no chunk ever exceeds `maxTokens`, in any script.
 
 #### Sizing against a non-OpenAI model
 
@@ -356,9 +476,11 @@ using var model = File.OpenRead("tokenizer.model");
 var tokenizer = new MicrosoftMLTokenizerAdapter(SentencePieceTokenizer.Create(model));
 ```
 
-**Check the round trip before you index anything with it.** FluentChunker decodes token runs both to find legal cut points and to measure how far a chunk extends in the source, so it requires a tokenizer whose `Decode` reproduces the encoded text exactly. A tokenizer that normalises text still counts tokens correctly, but chunk boundaries are then derived from decoded lengths that drift from the source.
+**Check the round trip before you index anything with it.** FluentChunker decodes token runs both to find legal cut points and to measure how far a chunk extends in the source, so it requires a tokenizer whose `Decode` reproduces the encoded text exactly.  
+A tokenizer that normalises text still counts tokens correctly, but chunk boundaries are then derived from decoded lengths that drift from the source.
 
-**FluentChunker throws `InvalidOperationException` when that drift changes the decoded length, instead of returning truncated output.** The table below is the behaviour that guard exists to prevent, measured against a `BertTokenizer` whose vocabulary did not cover the text, on a 185-character document at an 8-token budget:
+**FluentChunker throws `InvalidOperationException` when that drift changes the decoded length, instead of returning truncated output.** The throw surfaces while the chunk stream is enumerated, at the first affected window, so put your error handling around the `await foreach` (or `ToListAsync`) rather than the `ChunkAsync` call.  
+The table below is the behaviour that guard exists to prevent, measured against a `BertTokenizer` whose vocabulary did not cover the text, on a 185-character document at an 8-token budget:
 
 | | Shipped `cl100k_base` | Normalising tokenizer, before the guard |
 |---|---|---|
@@ -367,9 +489,11 @@ var tokenizer = new MicrosoftMLTokenizerAdapter(SentencePieceTokenizer.Create(mo
 | Characters never emitted | 0 | 4, the end of the document |
 | Chunks reassemble to the source | Yes | No |
 
-That column now throws rather than returning those chunks. Note what did **not** fail while it was silent: `document.Substring(chunk.SourceStart, chunk.SourceLength) == chunk.Text` held for every chunk in both runs. The offsets stay internally consistent, so the obvious sanity check passes on truncated output, and no inspection of the chunks reveals the problem.
+That column now throws rather than returning those chunks. Note what did **not** fail while it was silent: `chunk.SliceOf(document) == chunk.Text` held for every chunk in both runs.  
+The offsets stay internally consistent, so the obvious sanity check passes on truncated output, and no inspection of the chunks reveals the problem.
 
-**Run the round trip anyway.** The guard compares decoded lengths, so a normalisation that preserves length passes it: BERT lowercasing plain ASCII produces correct chunks and correctly does not throw, but the same tokenizer meeting one out-of-vocabulary word does. The guard turns a silent failure into a loud one at chunking time; the round trip tells you before you get there.
+**Run the round trip anyway.** The guard compares decoded lengths, so a normalisation that preserves length passes it: BERT lowercasing plain ASCII produces correct chunks and correctly does not throw, but the same tokenizer meeting one out-of-vocabulary word does.  
+The guard turns a silent failure into a loud one at chunking time; the round trip tells you before you get there.
 
 Paste this into your own project and run it over a representative sample of your corpus:
 
@@ -393,7 +517,8 @@ The failure is not hypothetical. Two common causes, both reproducible with `Bert
 | `LowerCaseBeforeTokenization`, on by default for BERT | `"The state of a program."` comes back as `"the state of a program."` |
 | A word missing from the vocabulary | That word comes back as `"[UNK]"` |
 
-The first is why the example above sets `LowerCaseBeforeTokenization = false`. The second cannot be configured away: it depends on your text matching the model's vocabulary, which is exactly what the check above measures. SentencePiece and Llama tokenizers carry their own normalisation, so run the check for those too. `cl100k_base`, the encoding FluentChunker ships, round-trips exactly and is covered by the test suite.
+The first is why the example above sets `LowerCaseBeforeTokenization = false`. The second cannot be configured away: it depends on your text matching the model's vocabulary, which is exactly what the check above measures.  
+SentencePiece and Llama tokenizers carry their own normalisation, so run the check for those too. `cl100k_base`, the encoding FluentChunker ships, round-trips exactly and is covered by the test suite.
 
 ### Custom Tokenizers
 
@@ -447,15 +572,16 @@ Also stepped, in this order:
 
 ### ChunkingPipeline
 
-- `.Chunk(string document)`: Run the pipeline and return chunks
-- `.Chunk(string document, Action<MetadataBuilder> configureMetadata)`: Run with additional document-level metadata; merged over the pipeline metadata, document values win on key collision
+- `.ChunkAsync(string document, CancellationToken cancellationToken = default)`: Run the pipeline, streaming chunks lazily in document order
+- `.ChunkAsync(string document, Action<MetadataBuilder>? configureMetadata, CancellationToken cancellationToken = default)`: Run with additional document-level metadata; merged over the pipeline metadata, document values win on key collision
 
 ### Chunk
 
 Each chunk contains:
-- `Index`: Zero-based position in the chunk sequence (resets per `Chunk` call)
-- `SourceStart`: Index in the source document where `Text` begins, or `-1` when the chunker does not track it
-- `SourceLength`: Length of `Text` in the source document, or `-1` when the chunker does not track it. `document.Substring(chunk.SourceStart, chunk.SourceLength)` returns `Text` exactly; with overlap configured, consecutive chunks deliberately cover overlapping ranges
+- `Index`: Zero-based position in the chunk sequence (resets per `ChunkAsync` call)
+- `SourceStart`: Index in the source document where `Text` begins, or `-1` when the chunker does not track it; a `long`, because positions in streamed sources can exceed `int.MaxValue`
+- `SourceLength`: Length of `Text` in the source document, or `-1` when the chunker does not track it. `chunk.SliceOf(document)` returns `Text` exactly; with overlap configured, consecutive chunks deliberately cover overlapping ranges
+- `SliceOf(string document)`: The verification idiom — returns the verbatim source slice (equal to `Text` for every built-in strategy); throws `InvalidOperationException` when offsets are untracked
 - `Text`: The actual chunk content
 - `TokenCount`: Number of tokens in this chunk; never exceeds the max token size
 - `OverlapCount`: Tokens carried into this chunk from the previous chunk (`0` on the first chunk)
@@ -474,6 +600,7 @@ Implement to use custom tokenization:
 - Microsoft.ML.Tokenizers 2.0.0 or later, with the `cl100k_base` data package (included as dependencies)
 - Markdig 1.3.2 or later (included as dependency; used by structure-aware chunking)
 - Microsoft.Bcl.Memory 10.0.10 or later (included as dependency)
+- On .NET 8 only, [`System.Linq.AsyncEnumerable`](https://www.nuget.org/packages/System.Linq.AsyncEnumerable/) if you use `ToListAsync` or other LINQ operators over the chunk stream. It is not a package dependency, and plain `await foreach` needs nothing extra; on .NET 10 those operators are in the BCL
 
 ## Development
 

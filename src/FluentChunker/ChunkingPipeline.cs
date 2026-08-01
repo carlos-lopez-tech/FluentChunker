@@ -1,6 +1,7 @@
 using FluentChunker.Contracts;
 using FluentChunker.Tokenizers;
 using System.ComponentModel;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 
 namespace FluentChunker
@@ -33,11 +34,11 @@ namespace FluentChunker
 
         /// <summary>
         /// Splits a document, stamping every chunk with the pipeline-level metadata.
+        /// Chunks are produced lazily and in document order as the sequence is enumerated.
         /// </summary>
-        /// <param name="document">The document to split.</param>
-        /// <returns>The chunks, in document order.</returns>
-        /// <exception cref="ArgumentNullException"><paramref name="document"/> is null.</exception>
-        public IReadOnlyList<Chunk> Chunk(string document) => Chunk(document, null);
+        /// <inheritdoc cref="ChunkAsync(string, Action{MetadataBuilder}, CancellationToken)" path="/*[not(self::summary or self::param[@name='configureMetadata'])]"/>
+        public IAsyncEnumerable<Chunk> ChunkAsync(string document, CancellationToken cancellationToken = default) =>
+            ChunkAsync(document, null, cancellationToken);
 
         /// <summary>
         /// Splits a document, adding metadata that applies only to this call.
@@ -45,31 +46,28 @@ namespace FluentChunker
         /// </summary>
         /// <param name="document">The document to split.</param>
         /// <param name="configureMetadata">Populates the document-level metadata, or null for none.</param>
-        /// <returns>The chunks, in document order.</returns>
-        /// <exception cref="ArgumentNullException"><paramref name="document"/> is null.</exception>
-        public IReadOnlyList<Chunk> Chunk(string document, Action<MetadataBuilder>? configureMetadata)
+        /// <param name="cancellationToken">Observed before each chunk is produced: a token cancelled up front makes the enumeration throw <see cref="OperationCanceledException"/> before the first chunk, and one cancelled mid-enumeration stops it before the next.</param>
+        /// <returns>The chunks, or an empty sequence if the document holds no content to split.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="document"/> is null, thrown at the call rather than at enumeration.</exception>
+        public IAsyncEnumerable<Chunk> ChunkAsync(string document, Action<MetadataBuilder>? configureMetadata, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(document);
 
-            var chunks = _chunker.Chunk(document);
-
-            // Built once per call and shared by every chunk that carries no chunker metadata, so stamping allocates one container instead of one dictionary per chunk.
+            // Resolved before the iterator starts, so argument failures and a throwing configure delegate surface at the call rather than at the first MoveNextAsync.
             var effectiveMetadata = BuildEffectiveMetadata(configureMetadata);
 
-            if (effectiveMetadata.Count == 0)
-                return chunks;
+            return StampChunks(document, effectiveMetadata, cancellationToken);
+        }
 
-            var stamped = new Chunk[chunks.Count];
-            for (var i = 0; i < chunks.Count; i++)
+        // Stamps each chunk as it flows, so the first chunk is available before the last one is cut and the zero-metadata path passes chunks through untouched.
+        private async IAsyncEnumerable<Chunk> StampChunks(string document, ChunkMetadata effectiveMetadata, [EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            await foreach (var chunk in _chunker.ChunkAsync(document, cancellationToken).ConfigureAwait(false))
             {
-                var chunk = chunks[i];
-                stamped[i] = chunk with
-                {
-                    Metadata = chunk.Metadata.Count == 0 ? effectiveMetadata : Merge(chunk.Metadata, effectiveMetadata)
-                };
+                yield return effectiveMetadata.Count == 0
+                    ? chunk
+                    : chunk with { Metadata = chunk.Metadata.Count == 0 ? effectiveMetadata : Merge(chunk.Metadata, effectiveMetadata) };
             }
-
-            return stamped;
         }
 
         // Document values overwrite pipeline values, and both overwrite chunker values such as headingPath,
@@ -210,7 +208,7 @@ namespace FluentChunker
 
         /// <summary>
         /// Creates the immutable <see cref="ChunkingPipeline"/> from the configured steps.
-        /// The pipeline can be reused across documents via <see cref="ChunkingPipeline.Chunk(string)"/>.
+        /// The pipeline can be reused across documents via <see cref="ChunkingPipeline.ChunkAsync(string, System.Threading.CancellationToken)"/>.
         /// </summary>
         ChunkingPipeline Build();
     }

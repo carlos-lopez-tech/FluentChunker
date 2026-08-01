@@ -19,22 +19,27 @@ namespace FluentChunker.Chunkers.SentenceAware
         private readonly int _overlap = overlap;
         private readonly IReadOnlySet<string>? _additionalAbbreviations = additionalAbbreviations;
 
-        public IReadOnlyList<Chunk> Chunk(string text)
+        /// <inheritdoc/>
+        public IAsyncEnumerable<Chunk> ChunkAsync(string text, CancellationToken cancellationToken = default) =>
+            ChunkStream.Over(token => ChunkCore(text, token), cancellationToken);
+
+        // Sizing every sentence runs before the first chunk can be cut and is the bulk of that wait, so the token goes into it rather than only guarding the chunks that come out.
+        // Splitting the document into sentences stays uninterruptible, a floor far smaller than the counting it precedes.
+        private IEnumerable<Chunk> ChunkCore(string text, CancellationToken cancellationToken)
         {
             if (string.IsNullOrEmpty(text))
-                return [];
+                yield break;
 
             var sentences = SentenceSplitter.Split(text, _additionalAbbreviations);
             if (sentences.Count == 0)
-                return [];
+                yield break;
 
-            var tokenCounts = CountSentenceTokens(text, sentences);
+            var tokenCounts = CountSentenceTokens(text, sentences, cancellationToken);
 
-            var chunks = new List<Chunk>();
             var chunkSentences = new List<int>();
             var chunkTokens = 0;
             var chunkOverlap = 0;
-            var index = 0;
+            var counter = new ChunkCounter();
 
             // Walk the sentences left to right, appending each to the current chunk until the next one would push it over the token budget, then start a new chunk.
             for (var i = 0; i < sentences.Count; i++)
@@ -44,12 +49,14 @@ namespace FluentChunker.Chunkers.SentenceAware
                     // This sentence is over budget on its own.
                     // Flush whatever is buffered, split just this sentence into token windows,
                     // then continue with an empty buffer so the sentences around it never merge into those windows and no overlap is carried across the gap.
-                    FlushChunk(text, sentences, chunkSentences, chunkOverlap, chunks, ref index);
+                    if (chunkSentences.Count > 0)
+                        yield return BuildChunk(text, sentences, chunkSentences, chunkOverlap, counter.Next());
                     chunkSentences.Clear();
                     chunkTokens = 0;
                     chunkOverlap = 0;
 
-                    EmitOversizedSentence(text, sentences[i], chunks, ref index);
+                    foreach (var window in EmitOversizedSentence(text, sentences[i], counter))
+                        yield return window;
                     continue;
                 }
 
@@ -57,7 +64,7 @@ namespace FluentChunker.Chunkers.SentenceAware
                 {
                     // Adding this sentence would overflow the budget.
                     // Flush the current chunk, then seed the next one with the last whole sentences of the flushed chunk (the overlap) before adding the incoming sentence below.
-                    FlushChunk(text, sentences, chunkSentences, chunkOverlap, chunks, ref index);
+                    yield return BuildChunk(text, sentences, chunkSentences, chunkOverlap, counter.Next());
 
                     var (seed, seedTokens) = SeedNextChunk(chunkSentences, tokenCounts);
 
@@ -73,8 +80,8 @@ namespace FluentChunker.Chunkers.SentenceAware
                 chunkTokens += tokenCounts[i];
             }
 
-            FlushChunk(text, sentences, chunkSentences, chunkOverlap, chunks, ref index);
-            return chunks;
+            if (chunkSentences.Count > 0)
+                yield return BuildChunk(text, sentences, chunkSentences, chunkOverlap, counter.Next());
         }
 
         // Builds the overlap the next chunk will start with: the last whole sentences of the chunk just flushed, taken from the end backward, as many as fit the overlap budget.
@@ -112,12 +119,14 @@ namespace FluentChunker.Chunkers.SentenceAware
         // Counts the tokens of each sentence, budgeting for the worse of the two positions it can occupy.
         // A sentence in the middle of a chunk is sliced together with the whitespace before it, but a sentence that begins a chunk is sliced from its own start and loses that whitespace.
         // Dropping a leading space can raise the count instead of lowering it, because BPE encodes a space-prefixed word more cheaply than a bare one, so only the larger of the two counts keeps a packed chunk inside the budget.
-        private int[] CountSentenceTokens(string text, IReadOnlyList<SentenceSpan> sentences)
+        private int[] CountSentenceTokens(string text, IReadOnlyList<SentenceSpan> sentences, CancellationToken cancellationToken)
         {
             var tokenCounts = new int[sentences.Count];
 
             for (var i = 0; i < sentences.Count; i++)
             {
+                cancellationToken.ThrowIfCancellationRequested();
+
                 var sentence = sentences[i];
                 var asChunkStart = _tokenizer.CountTokens(text.Substring(sentence.Start, sentence.Length));
 
@@ -141,7 +150,7 @@ namespace FluentChunker.Chunkers.SentenceAware
         // The windows are sized as evenly as possible rather than filling each to the max and leaving a tiny last one, such as a lone "." chunk, and they do not overlap.
         // Every boundary lands on a legal cut, so the windows concatenate back to the sentence exactly.
         // Extents are relative to the sentence, so they are shifted by its start to point back into the document.
-        private void EmitOversizedSentence(string text, SentenceSpan sentence, List<Chunk> chunks, ref int index)
+        private IEnumerable<Chunk> EmitOversizedSentence(string text, SentenceSpan sentence, ChunkCounter counter)
         {
             var tokens = _tokenizer.Encode(text.Substring(sentence.Start, sentence.Length));
             var boundary = new TokenBoundary(_tokenizer, tokens);
@@ -150,41 +159,38 @@ namespace FluentChunker.Chunkers.SentenceAware
             {
                 var sourceStart = sentence.Start + window.CharStart;
 
-                chunks.Add(new Chunk
+                yield return new Chunk
                 {
-                    Index = index++,
+                    Index = counter.Next(),
                     Text = text.Substring(sourceStart, window.CharLength),
                     TokenCount = window.Length,
                     OverlapCount = 0,
                     SourceStart = sourceStart,
                     SourceLength = window.CharLength
-                });
+                };
             }
         }
 
-        private void FlushChunk(
-            string text, 
+        private Chunk BuildChunk(
+            string text,
             IReadOnlyList<SentenceSpan> sentences,
-            List<int> chunkSentences, 
-            int overlapCount, 
-            List<Chunk> chunks, ref int index)
+            List<int> chunkSentences,
+            int overlapCount,
+            int index)
         {
-            if (chunkSentences.Count == 0)
-                return;
-
             var start = sentences[chunkSentences[0]].Start;
             var end = sentences[chunkSentences[^1]].End;
             var chunkText = text[start..end];
 
-            chunks.Add(new Chunk
+            return new Chunk
             {
-                Index = index++,
+                Index = index,
                 Text = chunkText,
                 TokenCount = _tokenizer.CountTokens(chunkText),
                 OverlapCount = overlapCount,
                 SourceStart = start,
                 SourceLength = end - start
-            });
+            };
         }
     }
 }

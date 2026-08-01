@@ -17,24 +17,31 @@ namespace FluentChunker.Chunkers.FixedSize
         private readonly int _overlap = overlap;
 
         /// <inheritdoc/>
-        public IReadOnlyList<Chunk> Chunk(string text)
+        public IAsyncEnumerable<Chunk> ChunkAsync(string text, CancellationToken cancellationToken = default) =>
+            ChunkStream.Over(token => ChunkCore(text, token), cancellationToken);
+
+        // Unlike the other strategies, which encode one structural unit at a time, this one needs the whole document tokenized before it can place a single window.
+        // That made the encode the longest uninterruptible stretch in the library, so the token goes into it rather than only guarding the chunks that come out.
+        private IEnumerable<Chunk> ChunkCore(string text, CancellationToken cancellationToken)
         {
             if (string.IsNullOrEmpty(text))
-                return [];
+                yield break;
 
-            var allTokens = _tokenizer.Encode(text);
+            var allTokens = DocumentEncoding.Encode(_tokenizer, text, cancellationToken);
 
             if (allTokens.Count <= _maxTokens)
-                return [new Chunk
+            {
+                yield return new Chunk
                 {
                     Index = 0,
                     Text = text,
                     TokenCount = allTokens.Count,
                     SourceStart = 0,
                     SourceLength = text.Length
-                }];
+                };
+                yield break;
+            }
 
-            var chunks = new List<Chunk>();
             var index = 0;
             var boundary = new TokenBoundary(_tokenizer, allTokens);
 
@@ -43,7 +50,7 @@ namespace FluentChunker.Chunkers.FixedSize
             // The window's character extent selects the same text the tokens decode to, which lets the chunk be a verbatim source slice.
             foreach (var window in TokenWindows.Strided(allTokens.Count, text.Length, _maxTokens, _overlap, boundary))
             {
-                chunks.Add(new Chunk
+                yield return new Chunk
                 {
                     Index = index++,
                     Text = text.Substring(window.CharStart, window.CharLength),
@@ -51,10 +58,8 @@ namespace FluentChunker.Chunkers.FixedSize
                     OverlapCount = window.Overlap,
                     SourceStart = window.CharStart,
                     SourceLength = window.CharLength
-                });
+                };
             }
-
-            return chunks;
         }
     }
 }

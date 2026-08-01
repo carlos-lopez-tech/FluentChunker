@@ -6,12 +6,40 @@ namespace FluentChunker.Samples.Demo
 {
     internal static class Program
     {
-        static void Main()
+        static async Task Main()
         {
             // Without this the console renders the non-Latin examples as question marks on Windows.
             Console.OutputEncoding = Encoding.UTF8;
 
-            var content = File.ReadAllText(SampleFile("testfile.txt"));
+            using var cts = new CancellationTokenSource();
+
+            // Ctrl+C cancels the chunking rather than killing the process, which is what makes the token observable in a sample that would otherwise finish too fast to interrupt.
+            Console.CancelKeyPress += (_, e) =>
+            {
+                e.Cancel = true;
+                cts.Cancel();
+            };
+
+            try
+            {
+                await RunExamplesAsync(cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                // Raised by the await foreach that consumes the stream, never by the ChunkAsync call that only built it.
+                Console.WriteLine("\nCancelled between chunks. Everything printed above was already produced and stays valid.");
+            }
+
+            if (!Console.IsInputRedirected)
+            {
+                Console.ReadKey();
+            }
+        }
+
+        private static async Task RunExamplesAsync(CancellationToken cancellationToken)
+        {
+            var txtFile = SampleFile("testfile.txt");
+            var content = await File.ReadAllTextAsync(txtFile, cancellationToken);
 
             // The encoding FluentChunker ships, used by the OpenAI embedding models.
             // Any other encoding needs its own Microsoft.ML.Tokenizers.Data package referenced first.
@@ -29,22 +57,22 @@ namespace FluentChunker.Samples.Demo
                 .AddMetadata(meta => meta.Set("SourceType", "sample-files"))
                 .Build();
 
-            var chunks1 = pipeline1.Chunk(content, meta =>
+            var chunks1 = pipeline1.ChunkAsync(content, meta =>
             {
                 meta.Set("Source", "testfile.txt");
                 meta.Set("Title", "Demo Test File");
                 meta.Set("CreatedAt", DateTime.UtcNow);
-            });
+            }, cancellationToken);
 
             Console.WriteLine("Each chunk reports the source range it was sliced from, as an inclusive start-end pair with a character count.");
             Console.WriteLine("The note printed between two chunks states how their ranges relate:");
             Console.WriteLine("  OVERLAP   - the following range begins before the preceding one ends, by the configured overlap");
             Console.WriteLine("  ADJACENT  - the following range begins at the next index, with no characters in between");
             Console.WriteLine("  SEPARATOR - the characters between the two ranges delimited the units and belong to neither chunk");
-            Console.WriteLine("In every case a chunk's text equals document.Substring(SourceStart, SourceLength).\n\n");
+            Console.WriteLine("In every case a chunk's text equals chunk.SliceOf(document).\n\n");
 
             Console.WriteLine(">>> Example 1: Fixed-Size Chunking <<<\n");
-            PrintChunks(chunks1, content);
+            await PrintChunksAsync(chunks1, content, cancellationToken);
 
 
             // Example 2: Create Pipeline by using Sentence-Aware Chunking.
@@ -57,15 +85,15 @@ namespace FluentChunker.Samples.Demo
                 .AddMetadata(meta => meta.Set("SourceType", "sample-files"))
                 .Build();
 
-            var chunks2 = pipeline2.Chunk(content, meta =>
+            var chunks2 = pipeline2.ChunkAsync(content, meta =>
             {
                 meta.Set("Source", "testfile.txt");
                 meta.Set("Title", "Demo Test File");
                 meta.Set("CreatedAt", DateTime.UtcNow);
-            });
+            }, cancellationToken);
 
             Console.WriteLine(">>> Example 2: Sentence-Aware Chunking <<<\n");
-            PrintChunks(chunks2, content);
+            await PrintChunksAsync(chunks2, content, cancellationToken);
 
 
             // Example 3: Create Pipeline by using Sentence-Aware Chunking with custom abbreviations.
@@ -87,14 +115,14 @@ namespace FluentChunker.Samples.Demo
                 "Order No. 1234 took approx. three weeks to arrive. " +
                 "A follow-up shipment is expected next month.";
 
-            var chunks3 = pipeline3.Chunk(abbreviationText, meta =>
+            var chunks3 = pipeline3.ChunkAsync(abbreviationText, meta =>
             {
                 meta.Set("Source", "inline");
                 meta.Set("CreatedAt", DateTime.UtcNow);
-            });
+            }, cancellationToken);
 
             Console.WriteLine(">>> Example 3: Sentence-Aware Chunking with custom abbreviations <<<\n");
-            PrintChunks(chunks3, abbreviationText);
+            await PrintChunksAsync(chunks3, abbreviationText, cancellationToken);
 
 
             // Example 4: Create Pipeline by using Recursive Chunking.
@@ -110,15 +138,15 @@ namespace FluentChunker.Samples.Demo
                 .AddMetadata(meta => meta.Set("SourceType", "sample-files"))
                 .Build();
 
-            var chunks4 = pipeline4.Chunk(content, meta =>
+            var chunks4 = pipeline4.ChunkAsync(content, meta =>
             {
                 meta.Set("Source", "testfile.txt");
                 meta.Set("Title", "Demo Test File");
                 meta.Set("CreatedAt", DateTime.UtcNow);
-            });
+            }, cancellationToken);
 
             Console.WriteLine(">>> Example 4: Recursive Chunking <<<\n");
-            PrintChunks(chunks4, content);
+            await PrintChunksAsync(chunks4, content, cancellationToken);
 
 
             // Example 5: Recursive Chunking descending into an oversized paragraph.
@@ -142,10 +170,10 @@ namespace FluentChunker.Samples.Demo
                 "Several researchers compared retrieval results generated from synthetic benchmark " +
                 "documents against outputs produced from real company reports and customer support transcripts.";
 
-            var chunks5 = pipeline5.Chunk(descentText, meta => meta.Set("Source", "inline"));
+            var chunks5 = pipeline5.ChunkAsync(descentText, meta => meta.Set("Source", "inline"), cancellationToken);
 
             Console.WriteLine(">>> Example 5: Recursive Chunking (descent into an oversized paragraph) <<<\n");
-            PrintChunks(chunks5, descentText);
+            await PrintChunksAsync(chunks5, descentText, cancellationToken);
 
 
             // Example 6: Structure-Aware Chunking over a Markdown document.
@@ -153,7 +181,8 @@ namespace FluentChunker.Samples.Demo
             // and every chunk carries its heading path in Metadata["headingPath"].
             // Code fences, tables and lists stay whole while they fit, only an oversized paragraph descends to sentences.
             // This strategy has no overlap by design.
-            var markdownContent = File.ReadAllText(SampleFile("testfile.md"));
+            var mdFile = SampleFile("testfile.md");
+            var markdownContent = await File.ReadAllTextAsync(mdFile, cancellationToken);
 
             var pipeline6 = ChunkingPipeline.CreateBuilder()
                 .UseTokenizer(microsoftMLTokenizer)
@@ -163,15 +192,15 @@ namespace FluentChunker.Samples.Demo
                 .AddMetadata(meta => meta.Set("SourceType", "sample-files"))
                 .Build();
 
-            var chunks6 = pipeline6.Chunk(markdownContent, meta =>
+            var chunks6 = pipeline6.ChunkAsync(markdownContent, meta =>
             {
                 meta.Set("Source", "testfile.md");
                 meta.Set("Title", "Demo Test File (Markdown)");
                 meta.Set("CreatedAt", DateTime.UtcNow);
-            });
+            }, cancellationToken);
 
             Console.WriteLine(">>> Example 6: Structure-Aware Chunking (Markdown sections) <<<\n");
-            PrintChunks(chunks6, markdownContent);
+            await PrintChunksAsync(chunks6, markdownContent, cancellationToken);
 
 
             // Example 7: Sentence-Aware Chunking over a document that mixes writing systems.
@@ -194,40 +223,48 @@ namespace FluentChunker.Samples.Demo
                 "यह एक हिंदी वाक्य है। " +
                 "And a final English sentence closes it.";
 
-            var chunks7 = pipeline7.Chunk(multilingualText, meta => meta.Set("Source", "inline"));
+            var chunks7 = pipeline7.ChunkAsync(multilingualText, meta => meta.Set("Source", "inline"), cancellationToken);
 
             Console.WriteLine(">>> Example 7: Sentence-Aware Chunking across writing systems <<<\n");
-            PrintChunks(chunks7, multilingualText);
-
-            if (!Console.IsInputRedirected)
-            {
-                Console.ReadKey();
-            }
+            await PrintChunksAsync(chunks7, multilingualText, cancellationToken);
         }
 
         private static string SampleFile(string fileName) =>
             Path.Combine(AppContext.BaseDirectory, "testfiles", fileName);
 
-        private static void PrintChunks(IReadOnlyList<Chunk> chunks, string document)
+        // Consumes the chunk stream itself rather than a materialised list, so the sample shows what a real consumer does: work on each chunk as it is cut, holding nothing but the current one.
+        // A chunk's seam note describes how it relates to the chunk after it, so printing runs one chunk behind: each is written once its successor has arrived, and the last once the stream ends.
+        // WithCancellation is how a layer handed nothing but a stream still cancels it, and it composes with the token the caller already passed to ChunkAsync.
+        private static async Task PrintChunksAsync(IAsyncEnumerable<Chunk> chunks, string document, CancellationToken cancellationToken)
         {
-            for (var i = 0; i < chunks.Count; i++)
+            Chunk? pending = null;
+
+            await foreach (var chunk in chunks.WithCancellation(cancellationToken))
             {
-                var chunk = chunks[i];
+                if (pending is not null)
+                    PrintChunk(pending, DescribeSeam(pending, chunk, document));
 
-                // The end is the last index the chunk actually covers, so adjacent chunks read as 55 then 56 rather than repeating a boundary number.
-                var sourceEnd = chunk.SourceStart + chunk.SourceLength - 1;
-                Console.WriteLine($"Index: [{chunk.Index}] ({chunk.TokenCount} tokens) ({chunk.OverlapCount} overlap) (source {chunk.SourceStart}-{sourceEnd}, {chunk.SourceLength} chars)");
-                foreach (var kvp in chunk.Metadata)
-                {
-                    Console.WriteLine($"  {kvp.Key}: {kvp.Value}");
-                }
-                Console.WriteLine($"  Text:  {chunk.Text}");
-
-                Console.WriteLine(i + 1 < chunks.Count
-                    ? DescribeSeam(chunk, chunks[i + 1], document)
-                    : string.Concat(Enumerable.Repeat("- ", 50)));
-                Console.WriteLine("\n");
+                pending = chunk;
             }
+
+            if (pending is not null)
+                PrintChunk(pending, string.Concat(Enumerable.Repeat("- ", 50)));
+
+            Console.WriteLine("\n");
+        }
+
+        private static void PrintChunk(Chunk chunk, string seam)
+        {
+            // The end is the last index the chunk actually covers, so adjacent chunks read as 55 then 56 rather than repeating a boundary number.
+            var sourceEnd = chunk.SourceStart + chunk.SourceLength - 1;
+            Console.WriteLine($"Index: [{chunk.Index}] ({chunk.TokenCount} tokens) ({chunk.OverlapCount} overlap) (source {chunk.SourceStart}-{sourceEnd}, {chunk.SourceLength} chars)");
+            foreach (var kvp in chunk.Metadata)
+            {
+                Console.WriteLine($"  {kvp.Key}: {kvp.Value}");
+            }
+            Console.WriteLine($"  Text:  {chunk.Text}");
+
+            Console.WriteLine(seam);
             Console.WriteLine("\n");
         }
 
@@ -248,7 +285,8 @@ namespace FluentChunker.Samples.Demo
             if (right.SourceStart == leftEnd)
                 return $"{separator}\n\n  ^ ADJACENT: [{right.Index}] begins at {right.SourceStart}, immediately after {leftEnd - 1}. No characters lie between the two ranges.";
 
-            var between = document[leftEnd..right.SourceStart];
+            // Offsets are long for streamed sources, but an in-memory document is far below the int range, so the narrowing is safe.
+            var between = document[(int)leftEnd..(int)right.SourceStart];
             return $"{separator}\n\n  ^ SEPARATOR: {between.Length} character(s) at {leftEnd}-{right.SourceStart - 1} ({Visualise(between)}) lie between the ranges and belong to neither chunk.";
         }
 

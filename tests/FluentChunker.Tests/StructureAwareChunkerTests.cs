@@ -1,4 +1,5 @@
 using FluentChunker.Chunkers.StructureAware;
+using FluentChunker.Contracts;
 using FluentChunker.Tokenizers;
 
 namespace FluentChunker.Tests
@@ -30,14 +31,14 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Chunk_SentenceCheaperWithItsPrecedingSpace_StaysWithinBudget()
+        public async Task Chunk_SentenceCheaperWithItsPrecedingSpace_StaysWithinBudget()
         {
             // Arrange - " Demonstrated words follow after it." costs 7 tokens, but a chunk starting at that sentence drops the space and costs 8
             const string text = "The opening sentence stands here. Demonstrated words follow after it.";
             var chunker = new StructureAwareChunker(_microsoftMLTokenizer, maxTokens: 7);
 
             // Act
-            var result = chunker.Chunk(text);
+            var result = await chunker.ChunkAsync(text).ToListAsync();
 
             // Assert
             using (Assert.EnterMultipleScope())
@@ -49,39 +50,39 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Chunk_EmptyText_ReturnsEmptyList()
+        public async Task Chunk_EmptyText_ReturnsEmptyList()
         {
             // Arrange
             var chunker = new StructureAwareChunker(_microsoftMLTokenizer, maxTokens: 100);
 
             // Act
-            var result = chunker.Chunk("");
+            var result = await chunker.ChunkAsync("").ToListAsync();
 
             // Assert
             Assert.That(result, Is.Empty);
         }
 
         [Test]
-        public void Chunk_WhitespaceOnlyText_ReturnsEmptyList()
+        public async Task Chunk_WhitespaceOnlyText_ReturnsEmptyList()
         {
             // Arrange
             var chunker = new StructureAwareChunker(_microsoftMLTokenizer, maxTokens: 100);
 
             // Act
-            var result = chunker.Chunk("  \n \t \n  ");
+            var result = await chunker.ChunkAsync("  \n \t \n  ").ToListAsync();
 
             // Assert
             Assert.That(result, Is.Empty);
         }
 
         [Test]
-        public void Chunk_TwoSmallSections_ProducesOneChunkPerSection()
+        public async Task Chunk_TwoSmallSections_ProducesOneChunkPerSection()
         {
             // Arrange - both sections together are far below the budget; only the hard seam at the second heading forces two chunks
             var chunker = new StructureAwareChunker(_microsoftMLTokenizer, maxTokens: 100);
 
             // Act
-            var result = chunker.Chunk(TwoSectionDocument);
+            var result = await chunker.ChunkAsync(TwoSectionDocument).ToListAsync();
 
             // Assert
             Assert.That(result, Has.Count.EqualTo(2));
@@ -93,13 +94,13 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Chunk_SectionChunks_CarryHeadingPathMetadata()
+        public async Task Chunk_SectionChunks_CarryHeadingPathMetadata()
         {
             // Arrange
             var chunker = new StructureAwareChunker(_microsoftMLTokenizer, maxTokens: 100);
 
             // Act
-            var result = chunker.Chunk(TwoSectionDocument);
+            var result = await chunker.ChunkAsync(TwoSectionDocument).ToListAsync();
 
             // Assert
             using (Assert.EnterMultipleScope())
@@ -110,7 +111,7 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Chunk_NestedHeadings_JoinHeadingPathWithSeparator()
+        public async Task Chunk_NestedHeadings_JoinHeadingPathWithSeparator()
         {
             // Arrange
             var text = "# Archive Study\n\n" +
@@ -118,7 +119,7 @@ namespace FluentChunker.Tests
             var chunker = new StructureAwareChunker(_microsoftMLTokenizer, maxTokens: 100);
 
             // Act
-            var result = chunker.Chunk(text);
+            var result = await chunker.ChunkAsync(text).ToListAsync();
 
             // Assert - the h1 section is heading-only, the h2 section carries the full path
             Assert.That(result, Has.Count.EqualTo(2));
@@ -130,14 +131,14 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Chunk_PreambleChunk_HasEmptyHeadingPath()
+        public async Task Chunk_PreambleChunk_HasEmptyHeadingPath()
         {
             // Arrange
             var text = ParagraphOne + "\n\n# Archive Study\n\n" + ParagraphTwo;
             var chunker = new StructureAwareChunker(_microsoftMLTokenizer, maxTokens: 100);
 
             // Act
-            var result = chunker.Chunk(text);
+            var result = await chunker.ChunkAsync(text).ToListAsync();
 
             // Assert
             Assert.That(result, Has.Count.EqualTo(2));
@@ -149,26 +150,26 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Chunk_SectionFirstChunk_StartsWithHeadingLine()
+        public async Task Chunk_SectionFirstChunk_StartsWithHeadingLine()
         {
             // Arrange
             var chunker = new StructureAwareChunker(_microsoftMLTokenizer, maxTokens: 15);
 
             // Act
-            var result = chunker.Chunk(OversizedSection);
+            var result = await chunker.ChunkAsync(OversizedSection).ToListAsync();
 
             // Assert
             Assert.That(result[0].Text, Is.EqualTo("## Retrieval Notes From The Archive Session"));
         }
 
         [Test]
-        public void Chunk_OversizedSection_SplitsAtBlockBoundaries()
+        public async Task Chunk_OversizedSection_SplitsAtBlockBoundaries()
         {
             // Arrange - heading and paragraphs each fit 15 tokens alone, no two fit together
             var chunker = new StructureAwareChunker(_microsoftMLTokenizer, maxTokens: 15);
 
             // Act
-            var result = chunker.Chunk(OversizedSection);
+            var result = await chunker.ChunkAsync(OversizedSection).ToListAsync();
 
             // Assert - one chunk per block, each an exact verbatim slice
             Assert.That(result, Has.Count.EqualTo(4));
@@ -181,13 +182,13 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Chunk_OversizedSectionChunks_AllCarryTheSameHeadingPath()
+        public async Task Chunk_OversizedSectionChunks_AllCarryTheSameHeadingPath()
         {
             // Arrange
             var chunker = new StructureAwareChunker(_microsoftMLTokenizer, maxTokens: 15);
 
             // Act
-            var result = chunker.Chunk(OversizedSection);
+            var result = await chunker.ChunkAsync(OversizedSection).ToListAsync();
 
             // Assert
             foreach (var chunk in result)
@@ -198,7 +199,7 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Chunk_CodeFenceWithBlankLines_StaysWholeWhenItFits()
+        public async Task Chunk_CodeFenceWithBlankLines_StaysWholeWhenItFits()
         {
             // Arrange - the blank line inside the fence would break recursive chunking's paragraph tier; the structure-aware strategy must keep the fence intact
             var text = "## Benchmark Configuration\n\n" +
@@ -206,7 +207,7 @@ namespace FluentChunker.Tests
             var chunker = new StructureAwareChunker(_microsoftMLTokenizer, maxTokens: 100);
 
             // Act
-            var result = chunker.Chunk(text);
+            var result = await chunker.ChunkAsync(text).ToListAsync();
 
             // Assert
             Assert.That(result, Has.Count.EqualTo(1));
@@ -219,14 +220,14 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Chunk_PlainTextWithoutMarkdown_PacksParagraphsWithEmptyHeadingPath()
+        public async Task Chunk_PlainTextWithoutMarkdown_PacksParagraphsWithEmptyHeadingPath()
         {
             // Arrange
             var text = ParagraphOne + "\n\n" + ParagraphTwo;
             var chunker = new StructureAwareChunker(_microsoftMLTokenizer, maxTokens: 100);
 
             // Act
-            var result = chunker.Chunk(text);
+            var result = await chunker.ChunkAsync(text).ToListAsync();
 
             // Assert - degrades gracefully: one packed chunk, empty breadcrumb
             Assert.That(result, Has.Count.EqualTo(1));
@@ -238,13 +239,13 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Chunk_AllChunks_HaveZeroOverlapCount()
+        public async Task Chunk_AllChunks_HaveZeroOverlapCount()
         {
             // Arrange
             var chunker = new StructureAwareChunker(_microsoftMLTokenizer, maxTokens: 15);
 
             // Act
-            var result = chunker.Chunk(OversizedSection);
+            var result = await chunker.ChunkAsync(OversizedSection).ToListAsync();
 
             // Assert - this strategy has no overlap by design
             foreach (var chunk in result)
@@ -254,13 +255,13 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Chunk_MultipleChunks_HasSequentialIndices()
+        public async Task Chunk_MultipleChunks_HasSequentialIndices()
         {
             // Arrange
             var chunker = new StructureAwareChunker(_microsoftMLTokenizer, maxTokens: 15);
 
             // Act
-            var result = chunker.Chunk(OversizedSection);
+            var result = await chunker.ChunkAsync(OversizedSection).ToListAsync();
 
             // Assert
             for (var i = 0; i < result.Count; i++)
@@ -270,13 +271,13 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Chunk_PackedChunks_RespectTokenBudget()
+        public async Task Chunk_PackedChunks_RespectTokenBudget()
         {
             // Arrange
             var chunker = new StructureAwareChunker(_microsoftMLTokenizer, maxTokens: 15);
 
             // Act
-            var result = chunker.Chunk(OversizedSection);
+            var result = await chunker.ChunkAsync(OversizedSection).ToListAsync();
 
             // Assert
             foreach (var chunk in result)
@@ -296,14 +297,14 @@ namespace FluentChunker.Tests
             "models while debating how overlapping chunks preserved context across long documents.";
 
         [Test]
-        public void Chunk_OversizedParagraph_DescendsToWholeSentences()
+        public async Task Chunk_OversizedParagraph_DescendsToWholeSentences()
         {
             // Arrange - the paragraph exceeds 15 tokens, its sentences do not
             var text = "## Overlap Findings\n\n" + ThreeSentenceParagraph;
             var chunker = new StructureAwareChunker(_microsoftMLTokenizer, maxTokens: 15);
 
             // Act
-            var result = chunker.Chunk(text);
+            var result = await chunker.ChunkAsync(text).ToListAsync();
 
             // Assert - after the heading chunk, every chunk is sentence-aligned and a verbatim slice of the source (token windows would cut mid-word and decode)
             Assert.That(result, Has.Count.GreaterThan(1));
@@ -318,14 +319,14 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Chunk_OversizedSentence_FallsBackToBalancedTokenWindows()
+        public async Task Chunk_OversizedSentence_FallsBackToBalancedTokenWindows()
         {
             // Arrange - a single sentence over budget has no structure left to split on
             var text = "## Archive Session\n\n" + RunOnSentence;
             var chunker = new StructureAwareChunker(_microsoftMLTokenizer, maxTokens: 15);
 
             // Act
-            var result = chunker.Chunk(text);
+            var result = await chunker.ChunkAsync(text).ToListAsync();
 
             // Assert - heading chunk plus at least two window chunks, all within budget
             Assert.That(result, Has.Count.GreaterThanOrEqualTo(3));
@@ -340,7 +341,7 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Chunk_OversizedCodeFence_FallsBackToTokenWindowsWithHeadingPath()
+        public async Task Chunk_OversizedCodeFence_FallsBackToTokenWindowsWithHeadingPath()
         {
             // Arrange - an atomic block over budget cannot descend into sentences; it must go straight to balanced token windows, still stamped with its heading path
             var fenceLines = string.Join("\n",
@@ -349,7 +350,7 @@ namespace FluentChunker.Tests
             var chunker = new StructureAwareChunker(_microsoftMLTokenizer, maxTokens: 20);
 
             // Act
-            var result = chunker.Chunk(text);
+            var result = await chunker.ChunkAsync(text).ToListAsync();
 
             // Assert
             Assert.That(result, Has.Count.GreaterThan(2));
@@ -366,14 +367,14 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Chunk_SmallBlocksAroundOversizedParagraph_StayInTheirOwnChunks()
+        public async Task Chunk_SmallBlocksAroundOversizedParagraph_StayInTheirOwnChunks()
         {
             // Arrange - plain text: small paragraph, oversized run-on paragraph, small paragraph; the small ones must never merge across the descent seam
             var text = ParagraphOne + "\n\n" + RunOnSentence + "\n\n" + ParagraphTwo;
             var chunker = new StructureAwareChunker(_microsoftMLTokenizer, maxTokens: 15);
 
             // Act
-            var result = chunker.Chunk(text);
+            var result = await chunker.ChunkAsync(text).ToListAsync();
 
             // Assert
             Assert.That(result, Has.Count.GreaterThanOrEqualTo(4));
@@ -386,7 +387,7 @@ namespace FluentChunker.Tests
 
         // At maxTokens 6, "Vgl. Abschnitt 3 im Buch." only stays together when "Vgl" is registered as an abbreviation; without the guard the first sentence chunk is exactly "Vgl." (same proven sizing as the sentence-aware builder test).
         [Test]
-        public void Chunk_CustomAbbreviation_SuppressesFalseSentenceBreakDuringDescent()
+        public async Task Chunk_CustomAbbreviation_SuppressesFalseSentenceBreakDuringDescent()
         {
             // Arrange
             var text = "Vgl. Abschnitt 3 im Buch. Weiter geht es.";
@@ -395,8 +396,8 @@ namespace FluentChunker.Tests
             var guarded = new StructureAwareChunker(_microsoftMLTokenizer, maxTokens: 6, abbreviations);
 
             // Act
-            var unguardedResult = unguarded.Chunk(text);
-            var guardedResult = guarded.Chunk(text);
+            var unguardedResult = await unguarded.ChunkAsync(text).ToListAsync();
+            var guardedResult = await guarded.ChunkAsync(text).ToListAsync();
 
             // Assert
             using (Assert.EnterMultipleScope())
@@ -404,6 +405,98 @@ namespace FluentChunker.Tests
                 Assert.That(unguardedResult[0].Text, Is.EqualTo("Vgl."));
                 Assert.That(guardedResult[0].Text, Is.Not.EqualTo("Vgl."));
             }
+        }
+
+        // One token per character with an exact round trip, so packing math is predictable and the round-trip guard stays quiet.
+        private sealed class CharTokenizer : FluentChunker.Tokenizers.ITokenizer
+        {
+            public IReadOnlyList<int> Encode(string text)
+            {
+                var tokens = new int[text.Length];
+
+                for (var i = 0; i < text.Length; i++)
+                {
+                    tokens[i] = text[i];
+                }
+
+                return tokens;
+            }
+
+            public string Decode(IReadOnlyList<int> tokens)
+            {
+                var decoded = new System.Text.StringBuilder();
+
+                foreach (var token in tokens)
+                {
+                    decoded.Append((char)token);
+                }
+
+                return decoded.ToString();
+            }
+
+            public int CountTokens(string text) => text.Length;
+        }
+
+        // Two sections of at most 23 characters each, so a 30-token budget packs each section into exactly one chunk and sections are hard seams, giving exactly two chunks.
+        private const string TwoSectionMarkdown = "# Alpha\n\nIndexing note.\n\n# Beta\n\nRanking note.";
+
+        [Test]
+        public async Task ChunkAsync_EmptyText_YieldsNothing()
+        {
+            // Arrange
+            var chunker = new StructureAwareChunker(new CharTokenizer(), maxTokens: 30);
+
+            // Act
+            var result = await chunker.ChunkAsync(string.Empty).ToListAsync();
+
+            // Assert
+            Assert.That(result, Is.Empty);
+        }
+
+        [Test]
+        public void ChunkAsync_PreCancelledToken_ThrowsBeforeFirstChunk()
+        {
+            // Arrange
+            var chunker = new StructureAwareChunker(new CharTokenizer(), maxTokens: 30);
+            using var cts = new CancellationTokenSource();
+            cts.Cancel();
+            var consumed = new List<Chunk>();
+
+            // Act
+            async Task Consume()
+            {
+                await foreach (var chunk in chunker.ChunkAsync(TwoSectionMarkdown, cts.Token))
+                {
+                    consumed.Add(chunk);
+                }
+            }
+
+            // Assert
+            Assert.ThrowsAsync<OperationCanceledException>(Consume);
+            Assert.That(consumed, Is.Empty);
+        }
+
+        [Test]
+        public void ChunkAsync_TokenCancelledMidEnumeration_StopsBeforeNextChunk()
+        {
+            // Arrange
+            var chunker = new StructureAwareChunker(new CharTokenizer(), maxTokens: 30);
+            using var cts = new CancellationTokenSource();
+            var consumed = new List<Chunk>();
+
+            // Act
+            async Task Consume()
+            {
+                await foreach (var chunk in chunker.ChunkAsync(TwoSectionMarkdown, cts.Token))
+                {
+                    consumed.Add(chunk);
+                    cts.Cancel();
+                }
+            }
+
+            // Assert
+            Assert.ThrowsAsync<OperationCanceledException>(Consume);
+            Assert.That(consumed, Has.Count.EqualTo(1));
         }
     }
 }

@@ -54,7 +54,7 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Chunk_TwoRunsOverTheSameDocument_ProducesEqualChunks()
+        public async Task Chunk_TwoRunsOverTheSameDocument_ProducesEqualChunks()
         {
             // Arrange
             var pipeline = ChunkingPipeline.CreateBuilder()
@@ -68,8 +68,8 @@ namespace FluentChunker.Tests
             const string document = "A pragmatic developer chooses the least complicated implementation that reliably solves the problem.";
 
             // Act
-            var firstRun = pipeline.Chunk(document);
-            var secondRun = pipeline.Chunk(document);
+            var firstRun = await pipeline.ChunkAsync(document).ToListAsync();
+            var secondRun = await pipeline.ChunkAsync(document).ToListAsync();
 
             // Assert
             Assert.That(firstRun, Is.EqualTo(secondRun));

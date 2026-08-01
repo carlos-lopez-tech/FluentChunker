@@ -15,7 +15,7 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Chunk_PipelineMetadataConfigured_AttachesMetadataToAllChunks()
+        public async Task Chunk_PipelineMetadataConfigured_AttachesMetadataToAllChunks()
         {
             // Arrange
             var pipeline = ChunkingPipeline.CreateBuilder()
@@ -33,7 +33,7 @@ namespace FluentChunker.Tests
                 .Build();
 
             // Act
-            var chunks = pipeline.Chunk(InputText);
+            var chunks = await pipeline.ChunkAsync(InputText).ToListAsync();
 
             // Assert
             Assert.That(chunks, Has.Count.EqualTo(2));
@@ -49,7 +49,7 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Chunk_WithoutMetadata_ReturnsChunksWithEmptyMetadata()
+        public async Task Chunk_WithoutMetadata_ReturnsChunksWithEmptyMetadata()
         {
             // Arrange
             var pipeline = ChunkingPipeline.CreateBuilder()
@@ -60,7 +60,7 @@ namespace FluentChunker.Tests
                 .Build();
 
             // Act
-            var chunks = pipeline.Chunk(InputText);
+            var chunks = await pipeline.ChunkAsync(InputText).ToListAsync();
 
             // Assert
             Assert.That(chunks, Has.Count.GreaterThan(1));
@@ -71,7 +71,7 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Chunk_WithOverlapAndMetadata_AttachesMetadataToAllChunks()
+        public async Task Chunk_WithOverlapAndMetadata_AttachesMetadataToAllChunks()
         {
             // Arrange
             var pipeline = ChunkingPipeline.CreateBuilder()
@@ -84,7 +84,7 @@ namespace FluentChunker.Tests
                 .Build();
 
             // Act
-            var chunks = pipeline.Chunk(InputText);
+            var chunks = await pipeline.ChunkAsync(InputText).ToListAsync();
 
             // Assert - first chunk receives nothing; every following chunk receives the overlap
             Assert.That(chunks, Has.Count.GreaterThan(1));
@@ -100,7 +100,7 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void AddMetadata_CalledMultipleTimes_MergesAllEntries()
+        public async Task AddMetadata_CalledMultipleTimes_MergesAllEntries()
         {
             // Arrange
             var pipeline = ChunkingPipeline.CreateBuilder()
@@ -113,7 +113,7 @@ namespace FluentChunker.Tests
                 .Build();
 
             // Act
-            var chunks = pipeline.Chunk(InputText);
+            var chunks = await pipeline.ChunkAsync(InputText).ToListAsync();
 
             // Assert
             using (Assert.EnterMultipleScope())
@@ -124,7 +124,7 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Chunk_WithDocumentMetadata_AttachesToAllChunks()
+        public async Task Chunk_WithDocumentMetadata_AttachesToAllChunks()
         {
             // Arrange
             var pipeline = ChunkingPipeline.CreateBuilder()
@@ -135,11 +135,11 @@ namespace FluentChunker.Tests
                 .Build();
 
             // Act
-            var chunks = pipeline.Chunk(InputText, meta =>
+            var chunks = await pipeline.ChunkAsync(InputText, meta =>
             {
                 meta.Set("Url", "https://carloslopez.tech/doc-1");
                 meta.Set("Title", "Document One");
-            });
+            }).ToListAsync();
 
             // Assert
             Assert.That(chunks, Has.Count.GreaterThan(1));
@@ -154,7 +154,7 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Chunk_WithPipelineAndDocumentMetadata_MergesBoth()
+        public async Task Chunk_WithPipelineAndDocumentMetadata_MergesBoth()
         {
             // Arrange
             var pipeline = ChunkingPipeline.CreateBuilder()
@@ -166,7 +166,7 @@ namespace FluentChunker.Tests
                 .Build();
 
             // Act
-            var chunks = pipeline.Chunk(InputText, meta => meta.Set("Url", "https://carloslopez.tech/doc-1"));
+            var chunks = await pipeline.ChunkAsync(InputText, meta => meta.Set("Url", "https://carloslopez.tech/doc-1")).ToListAsync();
 
             // Assert
             using (Assert.EnterMultipleScope())
@@ -177,7 +177,7 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Chunk_DocumentMetadata_OverridesPipelineMetadataOnKeyCollision()
+        public async Task Chunk_DocumentMetadata_OverridesPipelineMetadataOnKeyCollision()
         {
             // Arrange
             var pipeline = ChunkingPipeline.CreateBuilder()
@@ -189,14 +189,14 @@ namespace FluentChunker.Tests
                 .Build();
 
             // Act
-            var chunks = pipeline.Chunk(InputText, meta => meta.Set("Language", "de"));
+            var chunks = await pipeline.ChunkAsync(InputText, meta => meta.Set("Language", "de")).ToListAsync();
 
             // Assert
             Assert.That(chunks[0].Metadata["Language"].GetString(), Is.EqualTo("de"));
         }
 
         [Test]
-        public void Chunk_ReusedPipelineWithDifferentDocumentMetadata_DoesNotLeakBetweenCalls()
+        public async Task Chunk_ReusedPipelineWithDifferentDocumentMetadata_DoesNotLeakBetweenCalls()
         {
             // Arrange
             var pipeline = ChunkingPipeline.CreateBuilder()
@@ -207,9 +207,9 @@ namespace FluentChunker.Tests
                 .Build();
 
             // Act
-            var chunksDoc1 = pipeline.Chunk(InputText, meta => meta.Set("Url", "https://carloslopez.tech/doc-1"));
-            var chunksDoc2 = pipeline.Chunk(InputText, meta => meta.Set("Url", "https://carloslopez.tech/doc-2"));
-            var chunksDoc3 = pipeline.Chunk(InputText);
+            var chunksDoc1 = await pipeline.ChunkAsync(InputText, meta => meta.Set("Url", "https://carloslopez.tech/doc-1")).ToListAsync();
+            var chunksDoc2 = await pipeline.ChunkAsync(InputText, meta => meta.Set("Url", "https://carloslopez.tech/doc-2")).ToListAsync();
+            var chunksDoc3 = await pipeline.ChunkAsync(InputText).ToListAsync();
 
             // Assert
             using (Assert.EnterMultipleScope())
@@ -221,7 +221,7 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Chunk_PipelineMetadata_IsOneInstanceSharedByAllChunks()
+        public async Task Chunk_PipelineMetadata_IsOneInstanceSharedByAllChunks()
         {
             // Arrange - stamping builds the merged metadata once per call, not once per chunk.
             var pipeline = ChunkingPipeline.CreateBuilder()
@@ -233,7 +233,7 @@ namespace FluentChunker.Tests
                 .Build();
 
             // Act
-            var chunks = pipeline.Chunk(InputText);
+            var chunks = await pipeline.ChunkAsync(InputText).ToListAsync();
 
             // Assert
             Assert.That(chunks, Has.Count.GreaterThan(1));
@@ -241,7 +241,7 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Chunk_StructureAwareChunksOfOneSection_ShareTheirSectionMetadata()
+        public async Task Chunk_StructureAwareChunksOfOneSection_ShareTheirSectionMetadata()
         {
             // Arrange
             var pipeline = ChunkingPipeline.CreateBuilder()
@@ -255,7 +255,7 @@ namespace FluentChunker.Tests
                                     "Second paragraph, also long enough to become its own separate chunk here.";
 
             // Act
-            var chunks = pipeline.Chunk(markdown);
+            var chunks = await pipeline.ChunkAsync(markdown).ToListAsync();
 
             // Assert
             Assert.That(chunks, Has.Count.GreaterThan(1));
@@ -263,7 +263,7 @@ namespace FluentChunker.Tests
         }
 
         [Test]
-        public void Chunk_PipelineMetadataCollidingWithChunkerKey_OverridesTheChunkerValue()
+        public async Task Chunk_PipelineMetadataCollidingWithChunkerKey_OverridesTheChunkerValue()
         {
             // Arrange - headingPath is reserved by structure-aware chunking and colliding with it is discouraged,
             // but the precedence is pinned: pipeline and document values overwrite chunker values, exactly as they did when stamping wrote into the chunk's dictionary.
@@ -276,7 +276,7 @@ namespace FluentChunker.Tests
                 .Build();
 
             // Act
-            var chunks = pipeline.Chunk("# Real Heading\n\nBody text.");
+            var chunks = await pipeline.ChunkAsync("# Real Heading\n\nBody text.").ToListAsync();
 
             // Assert
             Assert.That(chunks[0].Metadata["headingPath"].GetString(), Is.EqualTo("override"));
