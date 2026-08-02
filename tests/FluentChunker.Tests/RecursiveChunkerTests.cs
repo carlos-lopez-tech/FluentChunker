@@ -534,5 +534,177 @@ namespace FluentChunker.Tests
             Assert.ThrowsAsync<OperationCanceledException>(Consume);
             Assert.That(consumed, Has.Count.EqualTo(1));
         }
+
+        [Test]
+        public void ChunkAsync_NullReader_ThrowsArgumentNullExceptionAtCallTime()
+        {
+            // Arrange
+            var chunker = new RecursiveChunker(new CharTokenizer(), maxTokens: 22, overlap: 0);
+
+            // Act & Assert - the wrapper must throw before the first MoveNextAsync, not lazily inside the iterator
+            Assert.Throws<ArgumentNullException>(() => chunker.ChunkAsync((TextReader)null!));
+        }
+
+        // Single-segment fixtures for streamed-vs-in-memory equivalence, sized well below the default capacity.
+        private const string ThreeParagraphDoc = "The archive ingests new documents daily.\n\nEach document is split into token bounded chunks.\n\nEmbeddings are stored in the vector index.";
+        private const string FullLadderDoc = "Chunking Notes\n\nThe research group compared retrieval quality across overlapping and non overlapping chunk configurations while measuring reranking impact on synthetic and real corpora.";
+
+        [Test]
+        public async Task ChunkAsync_ReaderOverSingleSegmentParagraphs_MatchesInMemoryFieldForField()
+        {
+            // Arrange
+            var chunker = new RecursiveChunker(new MicrosoftMLTokenizerAdapter("cl100k_base"), maxTokens: 24, overlap: 0);
+            using var reader = new StringReader(ThreeParagraphDoc);
+
+            // Act
+            var inMemory = await chunker.ChunkAsync(ThreeParagraphDoc).ToListAsync();
+            var streamed = await chunker.ChunkAsync(reader).ToListAsync();
+
+            // Assert - value-equal records compare every field of every chunk
+            Assert.That(streamed, Is.EqualTo(inMemory));
+        }
+
+        [Test]
+        public async Task ChunkAsync_ReaderOverSingleSegmentLadderDocument_MatchesInMemoryFieldForField()
+        {
+            // Arrange - the second paragraph alone exceeds the budget, so the piece exercises descent through lines and sentences
+            var chunker = new RecursiveChunker(new MicrosoftMLTokenizerAdapter("cl100k_base"), maxTokens: 16, overlap: 0);
+            using var reader = new StringReader(FullLadderDoc);
+
+            // Act
+            var inMemory = await chunker.ChunkAsync(FullLadderDoc).ToListAsync();
+            var streamed = await chunker.ChunkAsync(reader).ToListAsync();
+
+            // Assert
+            Assert.That(streamed, Is.EqualTo(inMemory));
+        }
+
+        [Test]
+        public async Task ChunkAsync_ReaderWithParagraphStraddlingTheCapacityEdge_CarriesItWholeIntoTheNextSegment()
+        {
+            // Arrange - capacity 24 buffers up to the "S" of the second paragraph, which must be carried, never emitted partial; the blank lines are \r\n pairs
+            var chunker = new RecursiveChunker(new CharTokenizer(), maxTokens: 22, overlap: 0, segmentCapacity: 24);
+            using var reader = new StringReader("First archive note.\r\n\r\nSecond note.");
+
+            // Act
+            var result = await chunker.ChunkAsync(reader).ToListAsync();
+
+            // Assert
+            Assert.That(result, Has.Count.EqualTo(2));
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(result[0].Text, Is.EqualTo("First archive note."));
+                Assert.That(result[1].Text, Is.EqualTo("Second note."));
+                Assert.That(result[0].SourceStart, Is.EqualTo(0));
+                Assert.That(result[1].SourceStart, Is.EqualTo(23));
+                Assert.That(result[1].Index, Is.EqualTo(1));
+            }
+        }
+
+        [Test]
+        public void ChunkAsync_ReaderPreCancelledToken_ThrowsBeforeFirstChunk()
+        {
+            // Arrange
+            var chunker = new RecursiveChunker(new CharTokenizer(), maxTokens: 22, overlap: 0);
+            using var reader = new StringReader(ThreeParagraphText);
+            using var cts = new CancellationTokenSource();
+            cts.Cancel();
+            var consumed = new List<Chunk>();
+
+            // Act
+            async Task Consume()
+            {
+                await foreach (var chunk in chunker.ChunkAsync(reader, cts.Token))
+                {
+                    consumed.Add(chunk);
+                }
+            }
+
+            // Assert
+            Assert.ThrowsAsync<OperationCanceledException>(Consume);
+            Assert.That(consumed, Is.Empty);
+        }
+
+        [Test]
+        public void ChunkAsync_ReaderTokenCancelledMidEnumeration_StopsBeforeNextChunk()
+        {
+            // Arrange
+            var chunker = new RecursiveChunker(new CharTokenizer(), maxTokens: 22, overlap: 0);
+            using var reader = new StringReader(ThreeParagraphText);
+            using var cts = new CancellationTokenSource();
+            var consumed = new List<Chunk>();
+
+            // Act
+            async Task Consume()
+            {
+                await foreach (var chunk in chunker.ChunkAsync(reader, cts.Token))
+                {
+                    consumed.Add(chunk);
+                    cts.Cancel();
+                }
+            }
+
+            // Assert
+            Assert.ThrowsAsync<OperationCanceledException>(Consume);
+            Assert.That(consumed, Has.Count.EqualTo(1));
+        }
+
+        [Test]
+        public async Task ChunkAsync_ReaderWithNoBlankLinesEver_StaysBoundedAndKeepsTheBudget()
+        {
+            // Arrange - the failure forced descent exists to prevent: a paragraph that never closes must not buffer forever.
+            // A regression here busy-loops with no I/O, so bound the run: a reintroduced defect then times out instead of hanging CI.
+            var reader = new MeteredRepeatingReader("the archive group compared retrieval strategies ", totalChars: 10_000);
+            var chunker = new RecursiveChunker(new CharTokenizer(), maxTokens: 8, overlap: 0, segmentCapacity: 64);
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+            // Act & Assert - the window fills at most one buffer ahead of what it has handed out, so reading leads the yielded chunks by less than one capacity.
+            // The +128 bound (2x capacity) leaves slack rather than pinning that exactly, and no chunk ever exceeds the budget.
+            await foreach (var chunk in chunker.ChunkAsync(reader, cts.Token))
+            {
+                Assert.That(reader.CharsProvided, Is.LessThanOrEqualTo(chunk.SourceStart + chunk.SourceLength + 128));
+                Assert.That(chunk.TokenCount, Is.LessThanOrEqualTo(8));
+            }
+        }
+
+        [Test]
+        public async Task ChunkAsync_ReaderWithOpenParagraphFillingTheBuffer_DescendsTheBufferedPrefixAndResetsOverlapAtTheSeam()
+        {
+            // Arrange - capacity 16 over a blank-line-free document: the prefix "archive notes ra" is descended as one synthetic paragraph,
+            // the ladder bottoms out in balanced windows, and the chunk after the seam starts with OverlapCount 0 despite overlap being configured.
+            // A regression here busy-loops with no I/O, so bound the run: a reintroduced defect then times out instead of hanging CI.
+            var chunker = new RecursiveChunker(new CharTokenizer(), maxTokens: 8, overlap: 3, segmentCapacity: 16);
+            using var reader = new StringReader("archive notes rank lists");
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+            // Act
+            var result = await chunker.ChunkAsync(reader, cts.Token).ToListAsync();
+
+            // Assert - the mid-word cut in "notes ra" is the documented forced-descent divergence: bounded memory outranks unit integrity here.
+            Assert.That(result, Has.Count.EqualTo(3));
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(result.Select(c => c.Text), Is.EqualTo(new[] { "archive ", "notes ra", "nk lists" }));
+                Assert.That(result.Select(c => c.SourceStart), Is.EqualTo(new long[] { 0, 8, 16 }));
+                Assert.That(result.Select(c => c.OverlapCount), Is.All.Zero);
+                Assert.That(result[2].Index, Is.EqualTo(2));
+            }
+        }
+
+        [Test]
+        public async Task ChunkAsync_ReaderAcrossManySegments_KeepsIndexContinuity()
+        {
+            // Arrange - bound the run: a reintroduced forced-descent defect busy-loops with no I/O and would otherwise hang instead of failing.
+            var reader = new MeteredRepeatingReader("the archive group compared retrieval strategies ", totalChars: 2_000);
+            var chunker = new RecursiveChunker(new CharTokenizer(), maxTokens: 8, overlap: 0, segmentCapacity: 64);
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+            // Act
+            var result = await chunker.ChunkAsync(reader, cts.Token).ToListAsync();
+
+            // Assert
+            Assert.That(result, Has.Count.GreaterThan(10));
+            Assert.That(result.Select(c => c.Index), Is.EqualTo(Enumerable.Range(0, result.Count)));
+        }
     }
 }

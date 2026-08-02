@@ -5,7 +5,7 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.0.0] - 2026-08-01
+## [2.0.0] - 2026-08-02
 
 ### Breaking
 
@@ -66,16 +66,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a stream, and the warning that `MoveNextAsync` completes synchronously, so a large document blocks
   the calling thread unless the enumeration is wrapped in `Task.Run`.
 
+- **Chunk documents larger than a .NET string.** `ChunkingPipeline.ChunkAsync(TextReader, ...)`
+  streams fixed-size, sentence-aware and recursive chunking through one pooled fixed-size buffer
+  (262,144 chars), so memory stays flat regardless of input size — no hidden `ReadToEnd()`.
+  The token budget, the multilingual sentence machinery and exact source offsets all hold;
+  `SourceStart` values are absolute `long` positions in the stream.
+
+  ```csharp
+  using var reader = File.OpenText("very-large-corpus.txt");
+
+  await foreach (var chunk in pipeline.ChunkAsync(reader))
+  {
+      // first chunks arrive while the rest of the file is still unread
+  }
+  ```
+
+- **`IStreamingChunker`** — the capability interface behind it. Custom strategies opt into
+  streaming by implementing it. Structure-aware chunking deliberately does not (Markdown structure
+  needs the whole document in memory); handing its pipeline a reader throws an
+  `InvalidOperationException` that says so and names the strategies that stream.
+- **Seam semantics, documented:** a chunk never spans an internal buffer seam and overlap resets
+  there; a document that fits one buffer produces output identical to `ChunkAsync(string)`.
+  Boundary-free stretches longer than the buffer (a sentence or paragraph that never ends) degrade
+  to hard cuts instead of unbounded buffering, keeping every chunk within the token budget.
 - **`Chunk.SliceOf(document)`** — the verification idiom replacing `document.Substring(...)`:
   returns the verbatim source slice (equal to `Text` for every built-in strategy) and throws
   `InvalidOperationException` when the chunk does not track offsets.
 
 ### Changed
 
-- **`Chunk.SourceStart` is now a `long`** (was `int`). Positions in streamed sources — the next
-  release — can exceed `int.MaxValue`; taking the widening now means that release lands without
-  another break. In-memory documents are unaffected, and NUnit-style numeric assertions compare
-  across `int`/`long` unchanged.
+- **`Chunk.SourceStart` is now a `long`** (was `int`). Positions in streamed sources
+  (`ChunkAsync(TextReader, ...)`, above) can exceed `int.MaxValue`. In-memory documents are
+  unaffected, and NUnit-style numeric assertions compare across `int`/`long` unchanged.
 - **The tokenizer round-trip guard surfaces during enumeration.** The `InvalidOperationException`
   for length-changing decode drift now throws at the `await foreach`/`ToListAsync` consuming the
   stream, not at the `ChunkAsync` call, because chunks are produced lazily.
@@ -300,7 +322,8 @@ First public release.
 - Size chunks with the encoding of the model that consumes them. The same text can differ by roughly
   10% between encodings, so the wrong one silently misreports the budget.
 
-[Unreleased]: https://github.com/carlos-lopez-tech/FluentChunker/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/carlos-lopez-tech/FluentChunker/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/carlos-lopez-tech/FluentChunker/compare/v1.3.0...v2.0.0
 [1.3.0]: https://github.com/carlos-lopez-tech/FluentChunker/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/carlos-lopez-tech/FluentChunker/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/carlos-lopez-tech/FluentChunker/compare/v1.0.2...v1.1.0

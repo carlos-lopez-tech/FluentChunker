@@ -56,13 +56,44 @@ namespace FluentChunker
             // Resolved before the iterator starts, so argument failures and a throwing configure delegate surface at the call rather than at the first MoveNextAsync.
             var effectiveMetadata = BuildEffectiveMetadata(configureMetadata);
 
-            return StampChunks(document, effectiveMetadata, cancellationToken);
+            return StampChunks(token => _chunker.ChunkAsync(document, token), effectiveMetadata, cancellationToken);
+        }
+
+        /// <summary>
+        /// Splits a document read from <paramref name="reader"/> with bounded memory, stamping every chunk with the pipeline-level metadata.
+        /// Chunks are produced lazily and in stream order as the sequence is enumerated.
+        /// </summary>
+        /// <inheritdoc cref="ChunkAsync(TextReader, Action{MetadataBuilder}, CancellationToken)" path="/*[not(self::summary or self::param[@name='configureMetadata'])]"/>
+        public IAsyncEnumerable<Chunk> ChunkAsync(TextReader reader, CancellationToken cancellationToken = default) =>
+            ChunkAsync(reader, null, cancellationToken);
+
+        /// <summary>
+        /// Splits a document read from <paramref name="reader"/> with bounded memory, adding metadata that applies only to this call.
+        /// Document values overwrite pipeline values on key collisions and never leak into later calls.
+        /// </summary>
+        /// <param name="reader">The document source. The caller owns it: the library never disposes it, and it is read forward exactly once.</param>
+        /// <param name="configureMetadata">Populates the document-level metadata, or null for none.</param>
+        /// <param name="cancellationToken">Observed before each chunk is produced and by every read: a token cancelled up front makes the enumeration throw <see cref="OperationCanceledException"/> before the first chunk, and one cancelled mid-enumeration stops it before the next.</param>
+        /// <returns>The chunks, or an empty sequence if the stream holds no content to split.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="reader"/> is null, thrown at the call rather than at enumeration.</exception>
+        /// <exception cref="InvalidOperationException">The configured strategy cannot stream (it does not implement <see cref="IStreamingChunker"/>), thrown at the call rather than at enumeration.</exception>
+        public IAsyncEnumerable<Chunk> ChunkAsync(TextReader reader, Action<MetadataBuilder>? configureMetadata, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(reader);
+
+            if (_chunker is not IStreamingChunker streamingChunker)
+                throw new InvalidOperationException("The configured chunking strategy does not support streaming input. Structure-aware chunking needs the whole document in memory; use ChunkAsync(string), or configure fixed-size, sentence-aware or recursive chunking.");
+
+            var effectiveMetadata = BuildEffectiveMetadata(configureMetadata);
+
+            return StampChunks(token => streamingChunker.ChunkAsync(reader, token), effectiveMetadata, cancellationToken);
         }
 
         // Stamps each chunk as it flows, so the first chunk is available before the last one is cut and the zero-metadata path passes chunks through untouched.
-        private async IAsyncEnumerable<Chunk> StampChunks(string document, ChunkMetadata effectiveMetadata, [EnumeratorCancellation] CancellationToken cancellationToken)
+        // The source is a factory rather than a stream, because the producer must see the token merged by EnumeratorCancellation, which only exists once this iterator starts.
+        private async IAsyncEnumerable<Chunk> StampChunks(Func<CancellationToken, IAsyncEnumerable<Chunk>> chunkSource, ChunkMetadata effectiveMetadata, [EnumeratorCancellation] CancellationToken cancellationToken)
         {
-            await foreach (var chunk in _chunker.ChunkAsync(document, cancellationToken).ConfigureAwait(false))
+            await foreach (var chunk in chunkSource(cancellationToken).ConfigureAwait(false))
             {
                 yield return effectiveMetadata.Count == 0
                     ? chunk

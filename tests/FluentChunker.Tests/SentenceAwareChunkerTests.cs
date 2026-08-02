@@ -418,5 +418,234 @@ namespace FluentChunker.Tests
             Assert.ThrowsAsync<OperationCanceledException>(Consume);
             Assert.That(consumed, Has.Count.EqualTo(1));
         }
+
+        [Test]
+        public void ChunkAsync_NullReader_ThrowsArgumentNullExceptionAtCallTime()
+        {
+            // Arrange
+            var chunker = new SentenceAwareChunker(new CharTokenizer(), maxTokens: 17, overlap: 0);
+
+            // Act & Assert - the wrapper must throw before the first MoveNextAsync, not lazily inside the iterator
+            Assert.Throws<ArgumentNullException>(() => chunker.ChunkAsync((TextReader)null!));
+        }
+
+        // Single-segment fixtures for streamed-vs-in-memory equivalence, sized well below the default capacity.
+        private const string ThreePackedSentences = "The archive stores embeddings. Retrieval ranks the chunks. Reranking refines the answers.";
+        private const string OversizedMiddleSentence = "Chunks flow. The archive pipeline tokenizes, embeds, indexes, ranks, rescores and finally cites every retrieved passage across the corpus. Done.";
+
+        [TestCase(0)]
+        [TestCase(8)]
+        public async Task ChunkAsync_ReaderOverSingleSegmentDocument_MatchesInMemoryFieldForField(int overlap)
+        {
+            // Arrange - measured with cl100k_base: gap-inclusive per-sentence counts are 5, 7, 8 (19 total), so maxTokens 16 packs the first two sentences (12 tokens) into one chunk and forces a second.
+            // Overlap 8 then carries sentence 1 (7 tokens) into that second chunk, so the overlap 8 case actually exercises OverlapCount, unlike a budget loose enough to fit all three in one.
+            var chunker = new SentenceAwareChunker(new MicrosoftMLTokenizerAdapter("cl100k_base"), maxTokens: 16, overlap: overlap);
+            using var reader = new StringReader(ThreePackedSentences);
+
+            // Act
+            var inMemory = await chunker.ChunkAsync(ThreePackedSentences).ToListAsync();
+            var streamed = await chunker.ChunkAsync(reader).ToListAsync();
+
+            // Assert - value-equal records compare every field of every chunk, overlap stamps included.
+            // The count and overlap assertions below guard the fixture itself,
+            // so a future tokenizer or fixture change cannot silently collapse this back to a single-chunk, zero-overlap comparison without failing.
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(streamed, Is.EqualTo(inMemory));
+                Assert.That(streamed, Has.Count.GreaterThan(1));
+                if (overlap == 8)
+                    Assert.That(streamed.Select(c => c.OverlapCount), Has.Some.GreaterThan(0));
+            }
+        }
+
+        [Test]
+        public async Task ChunkAsync_ReaderOverOversizedSentenceInOneSegment_MatchesInMemoryBalancedFallback()
+        {
+            // Arrange - the middle sentence exceeds the budget but fits the buffer, so the streamed path must produce the same Balanced windows as the in-memory one
+            var chunker = new SentenceAwareChunker(new MicrosoftMLTokenizerAdapter("cl100k_base"), maxTokens: 16, overlap: 0);
+            using var reader = new StringReader(OversizedMiddleSentence);
+
+            // Act
+            var inMemory = await chunker.ChunkAsync(OversizedMiddleSentence).ToListAsync();
+            var streamed = await chunker.ChunkAsync(reader).ToListAsync();
+
+            // Assert
+            Assert.That(streamed, Is.EqualTo(inMemory));
+        }
+
+        [Test]
+        public async Task ChunkAsync_ReaderWithSentenceStraddlingTheCapacityEdge_CarriesItWholeIntoTheNextSegment()
+        {
+            // Arrange - capacity 24 buffers "Index the file. Rank hit", so the second sentence must be carried, never emitted partial
+            var chunker = new SentenceAwareChunker(new CharTokenizer(), maxTokens: 16, overlap: 0, segmentCapacity: 24);
+            using var reader = new StringReader("Index the file. Rank hits.");
+
+            // Act
+            var result = await chunker.ChunkAsync(reader).ToListAsync();
+
+            // Assert
+            Assert.That(result, Has.Count.EqualTo(2));
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(result[0].Text, Is.EqualTo("Index the file."));
+                Assert.That(result[1].Text, Is.EqualTo("Rank hits."));
+                Assert.That(result[0].SourceStart, Is.EqualTo(0));
+                Assert.That(result[1].SourceStart, Is.EqualTo(16));
+                Assert.That(result[1].Index, Is.EqualTo(1));
+            }
+        }
+
+        [Test]
+        public async Task ChunkAsync_ReaderWithTerminatorExactlyAtTheCapacityEdge_TreatsTheSegmentAsUnconfirmed()
+        {
+            // Arrange - "Index the file. " fills capacity 16 exactly; without the next sentence's start in view the split is unconfirmable,
+            // so the segment goes through the capacity path whole, trailing space included, a documented seam divergence
+            var chunker = new SentenceAwareChunker(new CharTokenizer(), maxTokens: 16, overlap: 0, segmentCapacity: 16);
+            using var reader = new StringReader("Index the file. Rank.");
+
+            // Act
+            var result = await chunker.ChunkAsync(reader).ToListAsync();
+
+            // Assert
+            Assert.That(result, Has.Count.EqualTo(2));
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(result[0].Text, Is.EqualTo("Index the file. "));
+                Assert.That(result[1].Text, Is.EqualTo("Rank."));
+                Assert.That(result[0].OverlapCount, Is.Zero);
+                Assert.That(result[1].OverlapCount, Is.Zero);
+                Assert.That(result[1].SourceStart, Is.EqualTo(16));
+            }
+        }
+
+        [Test]
+        public void ChunkAsync_ReaderPreCancelledToken_ThrowsBeforeFirstChunk()
+        {
+            // Arrange
+            var chunker = new SentenceAwareChunker(new CharTokenizer(), maxTokens: 17, overlap: 0);
+            using var reader = new StringReader(ThreeSentenceText);
+            using var cts = new CancellationTokenSource();
+            cts.Cancel();
+            var consumed = new List<Chunk>();
+
+            // Act
+            async Task Consume()
+            {
+                await foreach (var chunk in chunker.ChunkAsync(reader, cts.Token))
+                {
+                    consumed.Add(chunk);
+                }
+            }
+
+            // Assert
+            Assert.ThrowsAsync<OperationCanceledException>(Consume);
+            Assert.That(consumed, Is.Empty);
+        }
+
+        [Test]
+        public void ChunkAsync_ReaderTokenCancelledMidEnumeration_StopsBeforeNextChunk()
+        {
+            // Arrange
+            var chunker = new SentenceAwareChunker(new CharTokenizer(), maxTokens: 17, overlap: 0);
+            using var reader = new StringReader(ThreeSentenceText);
+            using var cts = new CancellationTokenSource();
+            var consumed = new List<Chunk>();
+
+            // Act
+            async Task Consume()
+            {
+                await foreach (var chunk in chunker.ChunkAsync(reader, cts.Token))
+                {
+                    consumed.Add(chunk);
+                    cts.Cancel();
+                }
+            }
+
+            // Assert
+            Assert.ThrowsAsync<OperationCanceledException>(Consume);
+            Assert.That(consumed, Has.Count.EqualTo(1));
+        }
+
+        [Test]
+        public async Task ChunkAsync_ReaderWithSentenceOutgrowingTheCapacity_HardCutsIntoBudgetSizedWindows()
+        {
+            // Arrange - capacity 17 buffers "archive embedding" as one terminator-less span, 17 tokens against maxTokens 8.
+            // 17 does not divide evenly by 8, so Strided (0,8)(8,8)(16,1) and Balanced (0,6)(6,6)(12,5) genuinely diverge here, unlike a capacity of 16, where both layouts collapse to the same 8+8 cut and a Strided-to-Balanced swap in EmitCapacityStretch would pass unnoticed.
+            // The asserted texts below are what Strided produces; Balanced would instead yield "archiv", "e embe", "dding".
+            var chunker = new SentenceAwareChunker(new CharTokenizer(), maxTokens: 8, overlap: 0, segmentCapacity: 17);
+            using var reader = new StringReader("archive embedding rank.");
+
+            // Act
+            var result = await chunker.ChunkAsync(reader).ToListAsync();
+
+            // Assert
+            Assert.That(result, Has.Count.EqualTo(4));
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(result.Select(c => c.Text), Is.EqualTo(new[] { "archive ", "embeddin", "g", "rank." }));
+                Assert.That(result.Select(c => c.TokenCount), Is.EqualTo(new[] { 8, 8, 1, 5 }));
+                Assert.That(result.Select(c => c.OverlapCount), Is.All.Zero);
+                Assert.That(result.Select(c => c.SourceStart), Is.EqualTo(new long[] { 0, 8, 16, 18 }));
+                Assert.That(result[3].Index, Is.EqualTo(3));
+            }
+        }
+
+        [Test]
+        public async Task ChunkAsync_ReaderWithTerminatorLessStream_StaysBoundedAndKeepsTheBudget()
+        {
+            // Arrange - the documented CJK degradation shape: no sentence terminator ever arrives
+            // A non-progressing regression here would busy-loop with no I/O, so bound the run and let it time out instead of hang.
+            var reader = new MeteredRepeatingReader("archive embeddings ranking corpus ", totalChars: 10_000);
+            var chunker = new SentenceAwareChunker(new CharTokenizer(), maxTokens: 8, overlap: 0, segmentCapacity: 64);
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+            // Act & Assert - the window fills at most one buffer ahead of what it has handed out, so reading leads the yielded chunks by less than one capacity.
+            // The +128 bound (2x capacity) leaves slack rather than pinning that exactly, while still catching a full-stream materialisation by orders of magnitude, and no chunk ever exceeds the budget.
+            await foreach (var chunk in chunker.ChunkAsync(reader, cts.Token))
+            {
+                Assert.That(reader.CharsProvided, Is.LessThanOrEqualTo(chunk.SourceStart + chunk.SourceLength + 128));
+                Assert.That(chunk.TokenCount, Is.LessThanOrEqualTo(8));
+            }
+        }
+
+        [Test]
+        public async Task ChunkAsync_ReaderWithAbbreviationInTheCarriedSpan_KeepsGuardProtectionAcrossTheSeam()
+        {
+            // Arrange - capacity 24 buffers "Send the file. See Dr. V": the carried span holds "Dr." and must not be falsely split after the seam
+            var chunker = new SentenceAwareChunker(new CharTokenizer(), maxTokens: 16, overlap: 0, segmentCapacity: 24);
+            using var reader = new StringReader("Send the file. See Dr. Vale.");
+
+            // Act
+            var result = await chunker.ChunkAsync(reader).ToListAsync();
+
+            // Assert
+            Assert.That(result, Has.Count.EqualTo(2));
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(result[0].Text, Is.EqualTo("Send the file."));
+                Assert.That(result[1].Text, Is.EqualTo("See Dr. Vale."));
+                Assert.That(result[1].SourceStart, Is.EqualTo(15));
+            }
+        }
+
+        [Test]
+        public async Task ChunkAsync_ReaderWithWhitespaceOnlyLeadingSegment_EmitsNothingForIt()
+        {
+            // Arrange - a full buffer of whitespace splits into no sentences and must leave the buffer without a chunk, matching the in-memory path
+            var chunker = new SentenceAwareChunker(new CharTokenizer(), maxTokens: 16, overlap: 0, segmentCapacity: 16);
+            using var reader = new StringReader(new string(' ', 16) + "Rank on.");
+
+            // Act
+            var result = await chunker.ChunkAsync(reader).ToListAsync();
+
+            // Assert
+            Assert.That(result, Has.Count.EqualTo(1));
+            using (Assert.EnterMultipleScope())
+            {
+                Assert.That(result[0].Text, Is.EqualTo("Rank on."));
+                Assert.That(result[0].SourceStart, Is.EqualTo(16));
+                Assert.That(result[0].Index, Is.Zero);
+            }
+        }
     }
 }

@@ -1,4 +1,5 @@
 using System.Text;
+using FluentChunker.Chunkers.FixedSize;
 using FluentChunker.Tokenizers;
 
 namespace FluentChunker.Tests
@@ -357,6 +358,17 @@ namespace FluentChunker.Tests
                 Assert.That(string.Concat(chunks.Select(c => c.Text)), Is.EqualTo(MixedCaseDocument), "the normalisation must not reach the emitted text");
                 Assert.That(chunks[^1].SourceStart + chunks[^1].SourceLength, Is.EqualTo(MixedCaseDocument.Length));
             }
+        }
+
+        [Test]
+        public void ChunkAsync_ReaderWithTokenizerDecodingShorterThanItsInput_ThrowsDuringEnumeration()
+        {
+            // Arrange: the guard must protect the streamed layouts exactly as it protects the in-memory ones
+            var chunker = new FixedSizeChunker(Shortening(), maxTokens: 8, overlap: 0);
+            using var reader = new StringReader(DriftDocument);
+
+            // Act & Assert
+            Assert.ThrowsAsync<InvalidOperationException>(async () => await chunker.ChunkAsync(reader).ToListAsync());
         }
     }
 }

@@ -10,15 +10,34 @@ namespace FluentChunker.Chunkers.FixedSize
     /// <param name="tokenizer">The tokenizer used to encode and decode the document.</param>
     /// <param name="maxTokens">Upper token bound per chunk; must be positive.</param>
     /// <param name="overlap">Tokens shared between consecutive chunks; must be smaller than <paramref name="maxTokens"/>.</param>
-    internal class FixedSizeChunker(ITokenizer tokenizer, int maxTokens, int overlap) : IChunker
+    /// <param name="segmentCapacity">Sliding window capacity for the streamed path.</param>
+    /// <param name="streamBasePosition">Sliding window starting position for the streamed path.</param>
+    internal class FixedSizeChunker(
+        ITokenizer tokenizer,
+        int maxTokens,
+        int overlap,
+        int segmentCapacity = SlidingTextWindow.DefaultCapacity,
+        long streamBasePosition = 0) : IStreamingChunker
     {
         private readonly ITokenizer _tokenizer = tokenizer;
         private readonly int _maxTokens = maxTokens;
         private readonly int _overlap = overlap;
 
+        // The last two parameters exist for tests only: tiny capacities force segment seams deterministically, and a seeded base proves the long offset arithmetic without streaming gigabytes.
+        // The builder never sets either, so production always streams with the default capacity from position zero.
+        private readonly int _segmentCapacity = segmentCapacity;
+        private readonly long _streamBasePosition = streamBasePosition;
+
         /// <inheritdoc/>
         public IAsyncEnumerable<Chunk> ChunkAsync(string text, CancellationToken cancellationToken = default) =>
             ChunkStream.Over(token => ChunkCore(text, token), cancellationToken);
+
+        /// <inheritdoc/>
+        public IAsyncEnumerable<Chunk> ChunkAsync(TextReader reader, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(reader);
+            return StreamingChunkLoop.Run(reader, _segmentCapacity, _streamBasePosition, HandleSegment, cancellationToken);
+        }
 
         // Unlike the other strategies, which encode one structural unit at a time, this one needs the whole document tokenized before it can place a single window.
         // That made the encode the longest uninterruptible stretch in the library, so the token goes into it rather than only guarding the chunks that come out.
@@ -60,6 +79,28 @@ namespace FluentChunker.Chunkers.FixedSize
                     SourceLength = window.CharLength
                 };
             }
+        }
+
+        // The shared loop's per-segment handler: cut after the last whitespace so words never straddle a seam, then delegate the piece to the untouched in-memory core and remap.
+        // A full buffer without any whitespace is cut hard at capacity, because bounded memory outranks word integrity on pathological input.
+        private (int Consumed, IEnumerable<Chunk> Chunks) HandleSegment(
+            string segment, bool endOfStream, long basePosition, ChunkCounter counter, CancellationToken cancellationToken)
+        {
+            var consumed = endOfStream ? segment.Length : CutAfterLastWhitespace(segment);
+            var piece = consumed == segment.Length ? segment : segment[..consumed];
+
+            return (consumed, StreamingChunkLoop.RemapPiece(ChunkCore(piece, cancellationToken), counter, basePosition));
+        }
+
+        private static int CutAfterLastWhitespace(string segment)
+        {
+            for (var i = segment.Length - 1; i >= 0; i--)
+            {
+                if (char.IsWhiteSpace(segment[i]))
+                    return i + 1;
+            }
+
+            return segment.Length;
         }
     }
 }

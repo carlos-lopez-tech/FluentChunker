@@ -8,20 +8,96 @@ namespace FluentChunker.Chunkers.SentenceAware
     /// When <c>overlap</c> is set, each new chunk begins with the last whole sentences of the previous one, as many as fit the overlap budget.
     /// A single sentence that exceeds the budget on its own cannot be kept whole and falls back to fixed token windows.
     /// </summary>
+    /// <param name="tokenizer">The tokenizer used to encode and decode the document.</param>
+    /// <param name="maxTokens">Upper token bound per chunk; must be positive.</param>
+    /// <param name="overlap">Tokens shared between consecutive chunks; must be smaller than <paramref name="maxTokens"/>.</param>
+    /// <param name="additionalAbbreviations">Extra abbreviations recognised alongside the built-in list.</param>
+    /// <param name="segmentCapacity">Sliding window capacity for the streamed path.</param>
+    /// <param name="streamBasePosition">Sliding window starting position for the streamed path.</param>
     internal class SentenceAwareChunker(
-        ITokenizer tokenizer, 
-        int maxTokens, 
+        ITokenizer tokenizer,
+        int maxTokens,
         int overlap,
-        IReadOnlySet<string>? additionalAbbreviations = null) : IChunker
+        IReadOnlySet<string>? additionalAbbreviations = null,
+        int segmentCapacity = SlidingTextWindow.DefaultCapacity,
+        long streamBasePosition = 0) : IStreamingChunker
     {
         private readonly ITokenizer _tokenizer = tokenizer;
         private readonly int _maxTokens = maxTokens;
         private readonly int _overlap = overlap;
         private readonly IReadOnlySet<string>? _additionalAbbreviations = additionalAbbreviations;
 
+        // The last two parameters exist for tests only: tiny capacities force segment seams deterministically, and a seeded base proves the long offset arithmetic without streaming gigabytes.
+        // The builder never sets either, so production always streams with the default capacity from position zero.
+        private readonly int _segmentCapacity = segmentCapacity;
+        private readonly long _streamBasePosition = streamBasePosition;
+
         /// <inheritdoc/>
         public IAsyncEnumerable<Chunk> ChunkAsync(string text, CancellationToken cancellationToken = default) =>
             ChunkStream.Over(token => ChunkCore(text, token), cancellationToken);
+
+        /// <inheritdoc/>
+        public IAsyncEnumerable<Chunk> ChunkAsync(TextReader reader, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(reader);
+            return StreamingChunkLoop.Run(reader, _segmentCapacity, _streamBasePosition, HandleSegment, cancellationToken);
+        }
+
+        // The shared loop's per-segment handler: complete sentences form the piece, and the last span of a non-final segment is carried whole into the next one.
+        // A segment with a single span is treated as unconfirmed whenever more input can still follow, because a sentence split is only confirmable with the following sentence's start in view, so this also degrades a segment that happens to hold exactly one complete, terminated sentence.
+        // A whitespace-only segment (no spans at all) is consumed without emitting, matching the in-memory core, which emits no chunk for it either.
+        private (int Consumed, IEnumerable<Chunk> Chunks) HandleSegment(
+            string segment, bool endOfStream, long basePosition, ChunkCounter counter, CancellationToken cancellationToken)
+        {
+            var sentences = SentenceSplitter.Split(segment, _additionalAbbreviations);
+
+            if (sentences.Count == 0)
+                return (segment.Length, []);
+
+            if (!endOfStream && sentences.Count == 1)
+                return (segment.Length, EmitCapacityStretch(segment, counter, basePosition));
+
+            var consumed = endOfStream ? segment.Length : sentences[^1].Start;
+            var piece = consumed == segment.Length ? segment : segment[..consumed];
+
+            return (consumed, StreamingChunkLoop.RemapPiece(ChunkCore(piece, cancellationToken), counter, basePosition));
+        }
+
+        // The degradation for the single-span segment HandleSegment could not confirm: each buffered stretch is laid out with Strided windows, because Balanced is reserved for units whose total token count is known.
+        // Overlap is 0 throughout: a capacity cut is a seam, and seams reset overlap.
+        private IEnumerable<Chunk> EmitCapacityStretch(string segment, ChunkCounter counter, long basePosition)
+        {
+            var tokens = _tokenizer.Encode(segment);
+
+            if (tokens.Count <= _maxTokens)
+            {
+                yield return new Chunk
+                {
+                    Index = counter.Next(),
+                    Text = segment,
+                    TokenCount = tokens.Count,
+                    OverlapCount = 0,
+                    SourceStart = basePosition,
+                    SourceLength = segment.Length
+                };
+                yield break;
+            }
+
+            var boundary = new TokenBoundary(_tokenizer, tokens);
+
+            foreach (var window in TokenWindows.Strided(tokens.Count, segment.Length, _maxTokens, 0, boundary))
+            {
+                yield return new Chunk
+                {
+                    Index = counter.Next(),
+                    Text = segment.Substring(window.CharStart, window.CharLength),
+                    TokenCount = window.Length,
+                    OverlapCount = 0,
+                    SourceStart = basePosition + window.CharStart,
+                    SourceLength = window.CharLength
+                };
+            }
+        }
 
         // Sizing every sentence runs before the first chunk can be cut and is the bulk of that wait, so the token goes into it rather than only guarding the chunks that come out.
         // Splitting the document into sentences stays uninterruptible, a floor far smaller than the counting it precedes.

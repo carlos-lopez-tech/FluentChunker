@@ -30,6 +30,7 @@ Build composable document chunking pipelines for RAG, embeddings, semantic searc
 - **Overlap support**: Configure token overlap between chunks to preserve context; overlap is budgeted inside the max token size, so no chunk ever exceeds it
 - **Source offsets**: Every chunk reports where it came from, so results can be cited or highlighted in the original document
 - **Streaming, cancellable API**: chunks are produced lazily as `IAsyncEnumerable<Chunk>` — the first chunk is available before the last one is cut — with `CancellationToken` support end to end. See [Streaming and Cancellation](#streaming-and-cancellation)
+- **Documents bigger than a string**: `ChunkAsync(TextReader)` streams fixed-size, sentence-aware and recursive chunking with bounded memory — one fixed-size buffer regardless of input size — and absolute `long` source offsets
 - **Two metadata scopes**: Attach pipeline-level metadata (constant per run) and document-level metadata (per `ChunkAsync` call) to each chunk
 - **Value-equal chunks**: `Chunk` is a true value object: deduplicate with `Distinct()`, key caches by chunk, and assert whole chunks in tests; metadata participates in equality
 - **Reusable pipelines**: Build once, execute against many documents; metadata never leaks between calls
@@ -97,7 +98,7 @@ On .NET 10, `ToListAsync` is part of the BCL. On .NET 8, add the official `Syste
 Three more changes to know about:
 
 - Custom `IChunker` implementations move with it: `IReadOnlyList<Chunk> Chunk(string text)` becomes `IAsyncEnumerable<Chunk> ChunkAsync(string text, CancellationToken cancellationToken = default)`. Chunking is CPU-bound, so a synchronous core wrapped in an async iterator is the expected shape; there is nothing to push onto the thread pool.
-- `Chunk.SourceStart` is now a `long` (streamed sources in a future release can exceed `int.MaxValue`). Verify a chunk against its source with `chunk.SliceOf(document)` instead of `document.Substring(...)` — it returns `chunk.Text` exactly for every built-in strategy and throws `InvalidOperationException` if the chunk does not track offsets.
+- `Chunk.SourceStart` is now a `long` (positions from `ChunkAsync(TextReader, ...)`, below, can exceed `int.MaxValue`). Verify a chunk against its source with `chunk.SliceOf(document)` instead of `document.Substring(...)` — it returns `chunk.Text` exactly for every built-in strategy and throws `InvalidOperationException` if the chunk does not track offsets.
 - The tokenizer round-trip guard (`InvalidOperationException` for a tokenizer whose decode drifts from the source) now surfaces while the chunk stream is enumerated — at the `await foreach` or the `ToListAsync` — rather than at the `ChunkAsync` call itself, because that is where the chunks are produced.
 
 ## Usage Examples
@@ -287,8 +288,10 @@ Cancelling *before* enumeration begins costs nothing in any strategy: the work i
 **Cancel at document granularity for Markdown.** For a hard bound such as a request timeout on structure-aware chunking, make one document the unit of work and cancel between documents, or cap document size at ingestion.  
 A multi-MB Markdown document cannot be abandoned in less time than its parse takes.
 
-**Chunking never yields the thread.** The work is CPU-bound, so `MoveNextAsync` completes synchronously and `await foreach` does not return control to the caller between chunks: there is no I/O to await, and nothing is pushed onto the thread pool on your behalf.  
+**Chunking never yields the thread — for the `string` overload.** The work is CPU-bound, so `MoveNextAsync` completes synchronously and `await foreach` does not return control to the caller between chunks: there is no I/O to await, and nothing is pushed onto the thread pool on your behalf.  
 On a UI thread or inside a request handler, wrap the enumeration in `Task.Run` when a large document would block something that matters.
+
+**The `TextReader` overload is the exception: it does real I/O.** Each internal buffer refill awaits `TextReader.ReadBlockAsync`, a genuine yield, so `MoveNextAsync` does not always complete synchronously on that path. Everything between refills — segmenting, cutting a piece, delegating to the in-memory core — is the same synchronous CPU-bound work described above. The enumeration already yields control at each refill, so the `Task.Run` advice above is unnecessary for `ChunkAsync(TextReader, ...)`: wrapping it just moves an I/O wait onto a pool thread for no benefit.
 
 ### Source Offsets (Citation and Highlighting)
 
@@ -349,12 +352,12 @@ var pipeline = ChunkingPipeline.CreateBuilder()
         .WithFixedSizeChunking()
         .WithMaxTokenSize(512)
         .WithOverlap(50))
-    .AddMetadata(meta => meta.Set("SourceType", "wiki"))   // run-constant
-    .Build();                                                // built once
+    .AddMetadata(meta => meta.Set("SourceType", "wiki"))        // run-constant
+    .Build();                                                   // built once
 
 foreach (var doc in documents)
 {
-    var chunks = pipeline.ChunkAsync(doc.Markdown, meta =>     // per document
+    var chunks = pipeline.ChunkAsync(doc.Markdown, meta =>      // per document
     {
         meta.Set("Url", doc.Url);
         meta.Set("Title", doc.Title);
@@ -384,6 +387,42 @@ value-equal, two chunks with the same content and metadata compare equal: `Disti
 `HashSet<Chunk>`, and equality assertions in tests behave the way the `record` keyword promises.
 One caveat is documented on `ChunkMetadata`: values compare by raw JSON text, which is stricter
 than semantic JSON equality for hand-crafted `JsonElement`s (`1e-3` != `0.001`).
+
+### Streaming Huge Documents (TextReader)
+
+A multi-gigabyte document cannot exist as a .NET string. Hand the pipeline a `TextReader` instead:
+the library reads through one fixed-size buffer (262,144 chars by default), so memory stays flat
+regardless of input size. You own the reader; it is read forward exactly once and never disposed
+by the library.
+
+```csharp
+using var reader = File.OpenText("very-large-corpus.txt");
+
+await foreach (var chunk in pipeline.ChunkAsync(reader))
+{
+    Console.WriteLine($"[{chunk.SourceStart}..{chunk.SourceStart + chunk.SourceLength}] {chunk.TokenCount} tokens");
+}
+```
+
+**Offsets in streams:** `SourceStart` is the absolute `long` position in the stream and can exceed
+`int.MaxValue`. There is no in-memory string to slice, so verification means seeking and re-reading
+the source; `chunk.SliceOf(document)` remains the idiom for in-memory documents.
+
+**Seam semantics:** a chunk never spans an internal buffer seam, and overlap resets there, the
+same rule the strategies already apply at descent seams. A document that fits one buffer produces
+output identical to `ChunkAsync(string)`, field for field.
+
+**Memory model per strategy:**
+
+| Strategy | What bounds memory | What degrades at the buffer edge |
+|---|---|---|
+| Fixed-size | one buffer | pieces are cut after the last whitespace so words never straddle a seam; a whitespace-free full buffer is cut hard, whole |
+| Sentence-aware | one buffer | a segment holding a single sentence span cannot be confirmed complete without the next sentence's start in view, so it degrades to a hard-cut, budget-sized `TokenWindows.Strided` layout with overlap 0, even when the sentence's terminator sits exactly at the buffer edge |
+| Recursive | one buffer | a paragraph still unclosed when the buffer fills triggers forced descent: the buffered prefix runs through the normal paragraph, then line, then sentence ladder, with its end as a descent seam |
+| Structure-aware | not supported | `ChunkAsync(TextReader)` throws `InvalidOperationException`: Markdown structure needs the whole document in memory — use `ChunkAsync(string)` |
+
+Every degradation keeps the two hard promises: no chunk exceeds the token budget, and reading never
+runs more than two segment buffers ahead of the chunks you have consumed.
 
 ## Tokenizers
 
@@ -574,6 +613,8 @@ Also stepped, in this order:
 
 - `.ChunkAsync(string document, CancellationToken cancellationToken = default)`: Run the pipeline, streaming chunks lazily in document order
 - `.ChunkAsync(string document, Action<MetadataBuilder>? configureMetadata, CancellationToken cancellationToken = default)`: Run with additional document-level metadata; merged over the pipeline metadata, document values win on key collision
+- `.ChunkAsync(TextReader reader, CancellationToken cancellationToken = default)`: Stream a document with bounded memory (strategy must support streaming)
+- `.ChunkAsync(TextReader reader, Action<MetadataBuilder>? configureMetadata, CancellationToken cancellationToken = default)`: Same, with document-level metadata
 
 ### Chunk
 
@@ -593,6 +634,13 @@ Implement to use custom tokenization:
 - `IReadOnlyList<int> Encode(string text)`: Convert text to token IDs
 - `string Decode(IReadOnlyList<int> tokens)`: Convert token IDs back to text
 - `int CountTokens(string text)`: Count the number of tokens in the text without materializing the token list
+
+### IStreamingChunker
+
+Implemented by the strategies that can read from a `TextReader` with bounded memory (fixed-size,
+sentence-aware, recursive). A custom `IChunker` opts into streaming by implementing it; the
+pipeline routes `ChunkAsync(TextReader)` to it and throws an actionable `InvalidOperationException`
+for strategies that do not.
 
 ## Requirements
 

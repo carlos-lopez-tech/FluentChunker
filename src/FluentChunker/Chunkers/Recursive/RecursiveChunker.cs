@@ -10,11 +10,19 @@ namespace FluentChunker.Chunkers.Recursive
     /// a piece that exceeds that budget on its own is split into smaller pieces instead.
     /// A sentence that is still too big falls back to fixed token windows.
     /// </summary>
+    /// <param name="tokenizer">The tokenizer used to encode and decode the document.</param>
+    /// <param name="maxTokens">Upper token bound per chunk; must be positive.</param>
+    /// <param name="overlap">Tokens shared between consecutive chunks; must be smaller than <paramref name="maxTokens"/>.</param>
+    /// <param name="additionalAbbreviations">Extra abbreviations recognised alongside the built-in list.</param>
+    /// <param name="segmentCapacity">Sliding window capacity for the streamed path.</param>
+    /// <param name="streamBasePosition">Sliding window starting position for the streamed path.</param>
     internal class RecursiveChunker(
-        ITokenizer tokenizer, 
-        int maxTokens, 
+        ITokenizer tokenizer,
+        int maxTokens,
         int overlap,
-        IReadOnlySet<string>? additionalAbbreviations = null) : IChunker
+        IReadOnlySet<string>? additionalAbbreviations = null,
+        int segmentCapacity = SlidingTextWindow.DefaultCapacity,
+        long streamBasePosition = 0) : IStreamingChunker
     {
         // The three structural levels the chunker splits on, from largest to smallest.
         // It tries the largest first, a piece still too big for the token budget is split again one level smaller.
@@ -27,9 +35,38 @@ namespace FluentChunker.Chunkers.Recursive
         private readonly int _overlap = overlap;
         private readonly IReadOnlySet<string>? _additionalAbbreviations = additionalAbbreviations;
 
+        // The last two parameters exist for tests only: tiny capacities force segment seams deterministically, and a seeded base proves the long offset arithmetic without streaming gigabytes.
+        // The builder never sets either, so production always streams with the default capacity from position zero.
+        private readonly int _segmentCapacity = segmentCapacity;
+        private readonly long _streamBasePosition = streamBasePosition;
+
         /// <inheritdoc/>
         public IAsyncEnumerable<Chunk> ChunkAsync(string text, CancellationToken cancellationToken = default) =>
             ChunkStream.Over(token => ChunkCore(text, token), cancellationToken);
+
+        /// <inheritdoc/>
+        public IAsyncEnumerable<Chunk> ChunkAsync(TextReader reader, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(reader);
+            return StreamingChunkLoop.Run(reader, _segmentCapacity, _streamBasePosition, HandleSegment, cancellationToken);
+        }
+
+        // The shared loop's per-segment handler: complete paragraphs form the piece, and the last span of a non-final segment is carried whole into the next one, because a paragraph is only closed by a blank line or by end of input.
+        // A single paragraph that fills the whole buffer forces the descent: the buffer becomes the piece, and ChunkCore treats it as one oversized paragraph and descends the ladder exactly as it would in memory, with the piece's end acting as the descent seam.
+        // A whitespace-only segment (no spans at all) is consumed without emitting, matching the in-memory core, which emits no chunk for it either.
+        private (int Consumed, IEnumerable<Chunk> Chunks) HandleSegment(
+            string segment, bool endOfStream, long basePosition, ChunkCounter counter, CancellationToken cancellationToken)
+        {
+            var paragraphs = BlockSplitter.SplitParagraphs(segment, 0, segment.Length);
+
+            if (paragraphs.Count == 0)
+                return (segment.Length, []);
+
+            var consumed = (endOfStream || paragraphs.Count == 1) ? segment.Length : paragraphs[^1].Start;
+            var piece = consumed == segment.Length ? segment : segment[..consumed];
+
+            return (consumed, StreamingChunkLoop.RemapPiece(ChunkCore(piece, cancellationToken), counter, basePosition));
+        }
 
         // Sizing every unit of a tier runs before that tier can emit its first chunk and is the bulk of the wait, so the token is threaded down to it.
         // Splitting the document into paragraphs stays uninterruptible, a negligible floor against the counting it precedes.

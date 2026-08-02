@@ -75,7 +75,7 @@ namespace FluentChunker.Tests
                 .Build();
 
             // Act & Assert
-            Assert.Throws<ArgumentNullException>(() => pipeline.ChunkAsync(null!));
+            Assert.Throws<ArgumentNullException>(() => pipeline.ChunkAsync((string)null!));
         }
 
         [Test]
@@ -147,7 +147,7 @@ namespace FluentChunker.Tests
             var pipeline = FixedSizePipeline(maxTokens: 8);
 
             // Act & Assert
-            Assert.Throws<ArgumentNullException>(() => pipeline.ChunkAsync(null!));
+            Assert.Throws<ArgumentNullException>(() => pipeline.ChunkAsync((string)null!));
         }
 
         [Test]
@@ -157,7 +157,7 @@ namespace FluentChunker.Tests
             var pipeline = FixedSizePipeline(maxTokens: 8);
 
             // Act & Assert
-            Assert.Throws<ArgumentNullException>(() => pipeline.ChunkAsync(null!, meta => meta.Set("Source", "archive")));
+            Assert.Throws<ArgumentNullException>(() => pipeline.ChunkAsync((string)null!, meta => meta.Set("Source", "archive")));
         }
 
         [Test]
