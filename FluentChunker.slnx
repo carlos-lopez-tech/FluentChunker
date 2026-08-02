@@ -4,6 +4,7 @@
     <File Path="LICENSE.txt" />
     <File Path="README.md" />
   </Folder>
+  <Project Path="benchmarks/FluentChunker.Benchmarks/FluentChunker.Benchmarks.csproj" />
   <Project Path="samples/FluentChunker.Samples.Demo/FluentChunker.Samples.Demo.csproj" Id="90ea9e64-fba6-44c7-883b-db5b96dc5eef" />
   <Project Path="src/FluentChunker/FluentChunker.csproj" />
   <Project Path="tests/FluentChunker.Tests/FluentChunker.Tests.csproj" />
