@@ -27,4 +27,10 @@
     <Using Include="NUnit.Framework" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Embedded rather than copied so the sweep fixtures read the same bytes on every runner, whatever the working directory -->
+    <!-- Linked from the repository root, shared with the benchmark project so one corpus backs both the sweeps and the published numbers -->
+    <EmbeddedResource Include="$(MSBuildThisFileDirectory)../../corpora/*.md" Link="Corpora/%(Filename)%(Extension)" />
+  </ItemGroup>
+
 </Project>

@@ -99,8 +99,8 @@ namespace FluentChunker.Chunkers.SentenceAware
             }
         }
 
-        // Sizing every sentence runs before the first chunk can be cut and is the bulk of that wait, so the token goes into it rather than only guarding the chunks that come out.
-        // Splitting the document into sentences stays uninterruptible, a floor far smaller than the counting it precedes.
+        // Sizing every sentence runs before the first chunk can be cut and calls the tokenizer once per sentence, so the token goes into it rather than only guarding the chunks that come out.
+        // Splitting the document into sentences stays uninterruptible, being a single character scan that calls no tokenizer.
         private IEnumerable<Chunk> ChunkCore(string text, CancellationToken cancellationToken)
         {
             if (string.IsNullOrEmpty(text))

@@ -16,9 +16,13 @@ namespace FluentChunker.Contracts
         public required string Text { get; init; }
 
         /// <summary>
-        /// Number of tokens in <see cref="Text"/> as measured by the pipeline's tokenizer.
+        /// Number of tokens the pipeline measured for <see cref="Text"/>.
         /// Never exceeds the configured max token size.
         /// </summary>
+        /// <remarks>
+        /// An upper bound on, not always equal to, the cost of encoding <see cref="Text"/> on its own: byte-pair encodings merge according to what surrounds a character, so a chunk cut from a longer encoding can cost one token less in isolation than it did in place.
+        /// The gap is rare, never more than a token, and only ever runs in this direction, so a chunk sized against this count always fits the budget of whatever consumes it.
+        /// </remarks>
         public required int TokenCount { get; init; }
 
         /// <summary>

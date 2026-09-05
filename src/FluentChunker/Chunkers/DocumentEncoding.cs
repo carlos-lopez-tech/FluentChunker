@@ -7,7 +7,7 @@ namespace FluentChunker.Chunkers
     internal static class DocumentEncoding
     {
         // Each batch carries a fixed per-call cost, so a batch too small pays for cancellation with throughput.
-        // Measured over a 2 MB document against encoding it in one call: this size costs nothing outside noise, and smaller ones measurably do.
+        // This size sits far enough up that curve that the per-call cost disappears into the encode it wraps, while staying small enough that a cancelled call returns promptly.
         // Because the bound is tokens rather than characters, the work between two cancellation checks stays the same on a 200 MB document as on a 2 MB one, which is the property worth having.
         // Comfortably above the most tokens a single character can occupy, so a batch always fits at least one character and the loop always advances.
         // Visible to the tests so they can size a document past it: a document that fits in one batch exercises none of the behaviour below.

@@ -31,6 +31,7 @@ jobs:
       - name: Build
         run: dotnet build FluentChunker.slnx --no-restore -c Release -warnaserror
 
+      # Runs the Sweep category too, which proves the chunk invariants still hold across a 1.2 MB document, where budget arithmetic and offset tracking have room to drift apart.
       - name: Test
         run: dotnet test tests/FluentChunker.Tests --no-build -c Release --collect:"XPlat Code Coverage" --results-directory ./coverage
 
@@ -42,6 +43,13 @@ jobs:
           # One report per target framework, merged so a line counts as covered when either run reaches it
           files: ./coverage/**/coverage.cobertura.xml
           format: cobertura
+
+      # A moved chunk boundary is a breaking change no API diff reveals, because an adopter who upgrades and gets different chunk text has to re-embed and re-index their corpus.
+      # This gate sits ahead of Pack so a failure stops the artifact rather than merely annotating it.
+      - name: Verify chunk boundaries
+        run: >
+          dotnet run --project benchmarks/FluentChunker.Benchmarks
+          --no-build -c Release -- drift
 
       - name: Pack
         run: dotnet pack src/FluentChunker/FluentChunker.csproj --no-build -c Release -o ./artifacts
