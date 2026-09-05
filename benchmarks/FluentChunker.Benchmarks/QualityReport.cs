@@ -18,6 +18,10 @@ namespace FluentChunker.Benchmarks
         private const int MaxTokens = 512;
         private const int Overlap = 64;
 
+        // SplitPlainTextParagraphs re-splits its input at maxTokensPerParagraph minus overlapTokens, and its fallback halves at the character midpoint.
+        // Pinning maxTokensPerLine to the paragraph budget therefore hands the packer half-budget lines it can never recombine, so the whole curve is reported rather than one point that would flatter this library by accident.
+        private static readonly int[] LineBudgets = [512, 256, 128, 64, 32, 16];
+
         internal static async Task RunAsync()
         {
             var document = CorpusLoader.Load("english-prose.md");
@@ -82,14 +86,21 @@ namespace FluentChunker.Benchmarks
                         ? "CONTENT LOST"
                         : $"content complete, {text.Length - concatenated.Length} whitespace chars dropped between units";
 
-                var skLines = TextChunker.SplitPlainTextLines(text, budget, tokenizer.CountTokens);
-                var skChunks = TextChunker.SplitPlainTextParagraphs(skLines, budget, tokenCounter: tokenizer.CountTokens);
-                var skMax = skChunks.Count == 0 ? 0 : skChunks.Max(tokenizer.CountTokens);
-                var skOverruns = skChunks.Count(c => tokenizer.CountTokens(c) > budget);
-
                 Console.WriteLine($"  {name}");
                 Console.WriteLine($"    FluentChunker    {chunks.Count,4} chunks, max {fluentMax,4} tokens, {fluentOverruns} overruns, rebuild: {rebuilt}");
-                Console.WriteLine($"    SemanticKernel   {skChunks.Count,4} chunks, max {skMax,4} tokens, {skOverruns} overruns");
+
+                foreach (var perLine in new[] { budget, budget / 2, budget / 4 })
+                {
+                    var skLines = TextChunker.SplitPlainTextLines(text, perLine, tokenizer.CountTokens);
+                    var skChunks = TextChunker.SplitPlainTextParagraphs(skLines, budget, tokenCounter: tokenizer.CountTokens);
+                    var skMax = skChunks.Count == 0 ? 0 : skChunks.Max(tokenizer.CountTokens);
+
+                    // U+FFFD catches a character already destroyed by a round trip, and the surrogate count catches one that was split but that nothing has encoded yet.
+                    var skSplit = skChunks.Sum(c => c.Count(ch => ch == '�') + LoneSurrogates(c));
+
+                    Console.WriteLine($"    SemanticKernel   {skChunks.Count,4} chunks, max {skMax,4} tokens, perLine {perLine,3}, {skSplit} chars split");
+                }
+
                 Console.WriteLine();
             }
         }
@@ -109,6 +120,7 @@ namespace FluentChunker.Benchmarks
 
             var overruns = 0;
             var maxObserved = 0;
+            var measuredTotal = 0L;
 
             foreach (var chunk in chunks)
             {
@@ -119,11 +131,16 @@ namespace FluentChunker.Benchmarks
                     overruns++;
 
                 maxObserved = Math.Max(maxObserved, measured);
+                measuredTotal += measured;
             }
+
+            // A maximum over several hundred chunks is an outlier, so the mean is what says how tightly a strategy actually packs.
+            var meanObserved = chunks.Count == 0 ? 0 : (double)measuredTotal / chunks.Count;
 
             Console.WriteLine(label);
             Console.WriteLine($"  chunks                 {chunks.Count:N0}");
             Console.WriteLine($"  max tokens observed    {maxObserved} (budget {MaxTokens})");
+            Console.WriteLine($"  mean tokens observed   {meanObserved:N1} (fill {meanObserved / MaxTokens * 100:N1}%)");
             Console.WriteLine($"  budget overruns        {overruns}");
             Console.WriteLine($"  coverage               {Coverage(chunks, document)}");
             Console.WriteLine();
@@ -176,29 +193,50 @@ namespace FluentChunker.Benchmarks
             return builder.ToString();
         }
 
-        private static void ReportSemanticKernel(string document, ITokenizer tokenizer)
+        // A cut through a surrogate pair leaves half a character in the string, and that half only turns into U+FFFD once something encodes it on the way out.
+        // Counting U+FFFD in the chunk text therefore reads zero whether or not the chunk was split, so the halves are counted directly instead.
+        // This copy measures the comparison baseline, which is never gated; the assertion that this library splits nothing lives in FluentChunker.Tests.
+        private static int LoneSurrogates(string text)
         {
-            var lines = TextChunker.SplitPlainTextLines(document, MaxTokens, tokenizer.CountTokens);
-            var chunks = TextChunker.SplitPlainTextParagraphs(lines, MaxTokens, Overlap, tokenCounter: tokenizer.CountTokens);
+            var lone = 0;
 
-            var overruns = 0;
-            var maxObserved = 0;
-
-            foreach (var chunk in chunks)
+            for (var i = 0; i < text.Length; i++)
             {
-                var measured = tokenizer.CountTokens(chunk);
+                if (char.IsHighSurrogate(text[i]))
+                {
+                    // A high surrogate is only whole when its low partner follows it in the same chunk.
+                    if (i + 1 < text.Length && char.IsLowSurrogate(text[i + 1]))
+                    {
+                        i++;
+                        continue;
+                    }
 
-                if (measured > MaxTokens)
-                    overruns++;
-
-                maxObserved = Math.Max(maxObserved, measured);
+                    lone++;
+                }
+                else if (char.IsLowSurrogate(text[i]))
+                {
+                    // Reached without consuming a high surrogate first, so this half was cut from its pair.
+                    lone++;
+                }
             }
 
-            Console.WriteLine("Semantic Kernel TextChunker");
-            Console.WriteLine($"  chunks                 {chunks.Count:N0}");
-            Console.WriteLine($"  max tokens observed    {maxObserved} (budget {MaxTokens})");
-            Console.WriteLine($"  budget overruns        {overruns}");
-            Console.WriteLine("  coverage               n/a (returns bare strings, no offsets)");
+            return lone;
+        }
+
+        private static void ReportSemanticKernel(string document, ITokenizer tokenizer)
+        {
+            Console.WriteLine("Semantic Kernel TextChunker, swept over maxTokensPerLine");
+
+            foreach (var perLine in LineBudgets)
+            {
+                var lines = TextChunker.SplitPlainTextLines(document, perLine, tokenizer.CountTokens);
+                var chunks = TextChunker.SplitPlainTextParagraphs(lines, MaxTokens, Overlap, tokenCounter: tokenizer.CountTokens);
+                var counts = chunks.Select(tokenizer.CountTokens).ToArray();
+                var mean = counts.Average();
+
+                Console.WriteLine($"  perLine {perLine,4}  {chunks.Count,6:N0} chunks, max {counts.Max(),4}, mean {mean,6:N1}, fill {mean / MaxTokens * 100,5:N1}%");
+            }
+
             Console.WriteLine();
         }
 

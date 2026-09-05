@@ -96,8 +96,6 @@ await foreach (var chunk in pipeline.ChunkAsync(document, cancellationToken))
 var chunks = await pipeline.ChunkAsync(document, cancellationToken).ToListAsync(cancellationToken);
 ```
 
-On .NET 10, `ToListAsync` is part of the BCL. On .NET 8, add the official `System.Linq.AsyncEnumerable` package.
-
 Three more changes to know about:
 
 - Custom `IChunker` implementations move with it: `IReadOnlyList<Chunk> Chunk(string text)` becomes `IAsyncEnumerable<Chunk> ChunkAsync(string text, CancellationToken cancellationToken = default)`. 
@@ -398,7 +396,9 @@ One caveat is documented on `ChunkMetadata`: values compare by raw JSON text, wh
 
 ### Streaming Huge Documents (TextReader)
 
-A multi-gigabyte document cannot exist as a .NET string. Hand the pipeline a `TextReader` instead: the library reads through one fixed-size buffer (262 144 chars by default), so memory stays flat regardless of input size. You own the reader; it is read forward exactly once and never disposed by the library.
+A multi-gigabyte document cannot exist as a .NET string. Hand the pipeline a `TextReader` instead: the library reads through one fixed-size buffer (262,144 chars by default), so memory stays flat regardless of input size. You own the reader; it is read forward exactly once and never disposed by the library.
+
+It is not a slower path, and for fixed-size chunking it is the cheaper one: see [What streaming costs](#what-streaming-costs).
 
 ```csharp
 using var reader = File.OpenText("very-large-corpus.txt");
@@ -429,7 +429,8 @@ Every degradation keeps the two hard promises: no chunk exceeds the token budget
 ## Measured Guarantees
 
 Everything the feature list promises is checked rather than asserted. 
-Every figure here is deterministic: run the commands at the end of this section and you will get these exact numbers back.
+Every chunk count and safety figure here is deterministic: run the commands at the end of this section and you will get these exact numbers back. 
+The one exception is [What streaming costs](#what-streaming-costs), which is timings and says so.
 
 Measured over a 1.2 million character public-domain document (Melville's *Moby-Dick*), at a 512-token budget with 64 tokens of overlap, counted with `cl100k_base`. 
 Every chunk is re-measured with the tokenizer rather than trusted, and every chunk is compared against `SliceOf(document)`.
@@ -451,35 +452,50 @@ Byte-pair encodings merge according to what surrounds a character, so a chunk en
 Across the sweep this affects at worst one chunk in 602, never by more than a single token, and only ever in the direction that leaves the chunk smaller than reported. 
 A chunk sized against `TokenCount` therefore always fits the budget of whatever consumes it.
 
-### Packing
-
-Filling the budget matters because chunks map to embedding calls. 
-Against `Microsoft.SemanticKernel.Text.TextChunker`, given the same document, the same 512-token budget and the same token counter:
-
-| | Chunks | Largest chunk seen |
-|---|---:|---:|
-| FluentChunker sentence-aware | 700 | 512 |
-| Semantic Kernel `TextChunker` | 1,024 | 443 |
-
-Semantic Kernel stops 13% short of the budget and needs 46% more chunks for the same content.
-
 ### Character safety
 
 At a deliberately tight 64-token budget, on inputs with no convenient place to split. 
-"Broken characters" counts lone surrogates in the chunk text, which is what a cut through the middle of a multi-token character leaves behind.
+A cut through a UTF-16 surrogate pair leaves half a character behind, which only becomes U+FFFD once something encodes it, so "characters split" counts those halves directly in the chunk text before any encoding can hide them.
 
-| Input | FluentChunker (recursive) | Semantic Kernel |
-|---|---|---|
-| CJK, no spaces | 38 chunks, 0 broken characters | 64 chunks |
-| Emoji, surrogate pairs and ZWJ | 108 chunks, 0 broken characters | 128 chunks |
-| Mixed Latin/Arabic/Hebrew/Devanagari/Thai | 75 chunks, 0 broken characters | 128 chunks |
-| No whitespace at all | 16 chunks, 0 broken characters | 24 chunks |
+| Input | Chunks | Over budget | Characters split | Rebuilds the input |
+|---|---:|---:|---:|---|
+| CJK, no spaces | 38 | 0 | 0 | exact |
+| Emoji, surrogate pairs and ZWJ | 108 | 0 | 0 | exact |
+| Mixed Latin/Arabic/Hebrew/Devanagari/Thai | 75 | 0 | 0 | content complete |
+| No whitespace at all | 16 | 0 | 0 | exact |
 
-### On speed
+### What streaming costs
 
-These are correctness and packing results, not a speed claim. 
-Raw throughput against `TextChunker` is comparable and configuration-dependent: without overlap Semantic Kernel is measurably faster, with overlap it is substantially slower. 
-The case for FluentChunker is the guarantees and the packing, not the milliseconds.
+`ChunkAsync(TextReader)` exists so that a document too large to be a .NET string can be chunked at all. 
+It turns out not to be a trade: on the same 1.2 million character document at a 512-token budget, the reader path is never slower than handing over the whole string.
+
+| Strategy | In memory | Streaming | Allocated, in memory | Allocated, streaming |
+|---|---:|---:|---:|---:|
+| Fixed-size | 75.2 ms | 73.5 ms | 23.7 MB | 16.5 MB |
+| Sentence-aware | 146.1 ms | 139.9 ms | 13.2 MB | 16.0 MB |
+| Recursive | 150.3 ms | 136.1 ms | 12.5 MB | 15.0 MB |
+
+Fixed-size allocates 30% less through the reader and stops touching the large object heap entirely, because the in-memory path materialises the whole token array while the streaming path never holds more than one buffer. 
+The packing strategies pay about 20% more for that buffer, having no large-object cost to save: they were already allocating roughly half what fixed-size did.
+
+The first chunk also arrives sooner, by roughly 4-6x, because the reader has only to fill one buffer before it can cut rather than segment the whole document first.
+
+Unlike every other table in this section, these are timings rather than guarantees. 
+They move by around 10% between runs on the same machine and are not comparable across different ones, so the ranking is the durable part, not the milliseconds. 
+"Never slower" rests on more than the three rows shown: the same pairing was measured at budgets 128, 512 and 2048, and across all nine pairs not one favoured the in-memory path by more than a single percent, while three favoured the reader by 11% to 21%. 
+The allocation figures are the stable half of this table and reproduce between sessions to the byte.
+
+### How this differs from `TextChunker`
+
+`Microsoft.SemanticKernel.Text.TextChunker` is the chunker a .NET RAG project most often already has to hand. 
+The difference is not throughput, it is what comes back.
+
+`TextChunker` returns `List<string>`. 
+FluentChunker returns `Chunk`, carrying its index, its `SourceStart` and `SourceLength` in the original document, its `TokenCount`, and an immutable metadata map. 
+Those offsets are what make `SliceOf(document)` possible, so a chunk can always be traced back to the span it came from, which a bare string cannot do.
+
+The pipeline is async end to end. 
+`ChunkAsync` returns `IAsyncEnumerable<Chunk>` and observes a `CancellationToken` before every chunk, and the fixed-size, sentence-aware and recursive strategies also accept a `TextReader`, chunking documents that never fit in memory.
 
 ### Reproducing this
 
@@ -493,6 +509,12 @@ The chunk counts and packing figures are measurements, so they live with the ben
 
 ```bash
 dotnet run --project benchmarks/FluentChunker.Benchmarks -c Release -- verify
+```
+
+The streaming timings need a benchmark harness rather than a stopwatch, and take a few minutes:
+
+```bash
+dotnet run --project benchmarks/FluentChunker.Benchmarks -c Release -- --filter "*StrategyBenchmarks*"
 ```
 
 ## Tokenizers

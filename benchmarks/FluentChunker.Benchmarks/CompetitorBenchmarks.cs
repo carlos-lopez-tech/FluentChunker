@@ -15,8 +15,19 @@ namespace FluentChunker.Benchmarks
     [MemoryDiagnoser]
     public class CompetitorBenchmarks
     {
+        /// <summary>
+        /// The <c>maxTokensPerLine</c> settings <see cref="TextChunker"/> is timed at.
+        /// </summary>
+        /// <remarks>
+        /// SplitPlainTextParagraphs re-splits its input at maxTokensPerParagraph minus the overlap, and its fallback halves an over-long line at the character midpoint.
+        /// Pinning maxTokensPerLine to the paragraph budget therefore leaves the packer roughly 250-token pieces it can never recombine, so it emits 1,024 chunks where FluentChunker emits 700 and the two sides are no longer doing the same amount of work.
+        /// Sweeping the setting is what makes the timing comparable; 512 is kept so the corrected figures can be read against the pinned ones they replace.
+        /// This is an ArgumentsSource rather than a Params so it applies to the one benchmark it means something to, instead of re-running the FluentChunker methods once per value.
+        /// </remarks>
+        public static IEnumerable<int> LineBudgets => [512, 128, 64, 16];
+
         private string _document = null!;
-        private List<string> _lines = null!;
+        private Dictionary<int, List<string>> _lines = null!;
         private MicrosoftMLTokenizerAdapter _tokenizer = null!;
         private ChunkingPipeline _fluentRecursive = null!;
         private ChunkingPipeline _fluentSentenceAware = null!;
@@ -44,7 +55,8 @@ namespace FluentChunker.Benchmarks
                 .Build();
 
             // The line split is Semantic Kernel's own prerequisite step and is hoisted out of the measurement, so its paragraph packing is timed on equal terms with a FluentChunker call that receives the raw document.
-            _lines = TextChunker.SplitPlainTextLines(_document, MaxTokens, CountTokens);
+            // One split per swept budget, prepared here for the same reason: what is being timed is the packing, not the preparation.
+            _lines = LineBudgets.ToDictionary(budget => budget, budget => TextChunker.SplitPlainTextLines(_document, budget, CountTokens));
         }
 
         private int CountTokens(string text) => _tokenizer.CountTokens(text);
@@ -58,7 +70,8 @@ namespace FluentChunker.Benchmarks
             await _fluentSentenceAware.ChunkAsync(_document).ToListAsync();
 
         [Benchmark]
-        public List<string> SemanticKernel_TextChunker() =>
-            TextChunker.SplitPlainTextParagraphs(_lines, MaxTokens, Overlap, tokenCounter: CountTokens);
+        [ArgumentsSource(nameof(LineBudgets))]
+        public List<string> SemanticKernel_TextChunker(int maxTokensPerLine) =>
+            TextChunker.SplitPlainTextParagraphs(_lines[maxTokensPerLine], MaxTokens, Overlap, tokenCounter: CountTokens);
     }
 }
