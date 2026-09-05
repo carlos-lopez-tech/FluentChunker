@@ -18,6 +18,9 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="FluentChunker.Tests" />
+    <!-- TokenBoundary is internal, and its memoisation is the reason P003's legality check did not cost throughput.
+         Measuring that claim end to end can only infer it, so the benchmark project needs the type directly. -->
+    <InternalsVisibleTo Include="FluentChunker.Benchmarks" />
   </ItemGroup>
 
 </Project>

@@ -75,7 +75,6 @@ namespace FluentChunker.Chunkers.SentenceAware
         }
 
         // Both terminator sets are tested for every character in the document, so they are comparisons rather than a scan over a constant string.
-        // The string form cost about a third of the throughput of sentence-aware chunking on a one megabyte document.
         // U+061F Arabic question mark, U+06D4 Urdu full stop, U+0964 Devanagari danda, U+0965 Devanagari double danda.
         // Escapes rather than the characters themselves, which are invisible or indistinguishable from their neighbours in most editors and diffs.
         private static bool IsSpacingTerminator(char value) 

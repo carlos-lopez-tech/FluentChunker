@@ -1,7 +1,8 @@
 using BenchmarkDotNet.Running;
 using FluentChunker.Benchmarks;
 
-// The quality report is a separate mode rather than a benchmark, because what it measures is output correctness, which a timing harness cannot express.
+// The quality report is a separate mode rather than a benchmark, because what it measures is how each library fills its budget, which a timing harness cannot express.
+// It never fails: the invariants it used to gate on are NUnit sweeps in FluentChunker.Tests, where a break names the strategy and the chunk rather than a total.
 if (args.Length > 0 && args[0] == "verify")
 {
     await QualityReport.RunAsync();

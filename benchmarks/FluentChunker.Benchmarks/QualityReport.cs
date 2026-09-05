@@ -7,10 +7,11 @@ using Microsoft.SemanticKernel.Text;
 namespace FluentChunker.Benchmarks
 {
     /// <summary>
-    /// Measures the output properties a timing run cannot see: whether the token budget actually holds, whether chunks are verbatim slices, and how long the first chunk takes to arrive.
+    /// Measures the output properties a timing run cannot see: how tightly each library fills the token budget it was given, and how long the first chunk takes to arrive.
     /// </summary>
     /// <remarks>
-    /// A chunker that overruns the budget is faster for a reason, so speed is only comparable once both sides are shown to respect the contract they claim.
+    /// A chunker that overruns the budget is faster for a reason, so speed is only comparable alongside what each side did with the contract it claims.
+    /// Nothing here gates: the invariants this used to enforce live in FluentChunker.Tests, where a failure names the strategy, the budget and the chunk instead of adding to a total.
     /// </remarks>
     internal static class QualityReport
     {
@@ -74,14 +75,12 @@ namespace FluentChunker.Benchmarks
                 var fluentMax = chunks.Count == 0 ? 0 : chunks.Max(c => tokenizer.CountTokens(c.Text));
                 var fluentOverruns = chunks.Count(c => tokenizer.CountTokens(c.Text) > budget);
 
-                // U+FFFD is what a cut through the middle of a character decodes to, so its absence is the evidence that no character was split.
-                var replacementChars = chunks.Sum(c => c.Text.Count(ch => ch == '�'));
                 var concatenated = string.Concat(chunks.Select(c => c.SliceOf(text)));
                 var rebuilt = concatenated == text
                     ? "exact"
-                    : Strip(concatenated) == Strip(text)
-                        ? $"content complete, {text.Length - concatenated.Length} whitespace chars dropped between units"
-                        : "CONTENT LOST";
+                    : Strip(concatenated) != Strip(text)
+                        ? "CONTENT LOST"
+                        : $"content complete, {text.Length - concatenated.Length} whitespace chars dropped between units";
 
                 var skLines = TextChunker.SplitPlainTextLines(text, budget, tokenizer.CountTokens);
                 var skChunks = TextChunker.SplitPlainTextParagraphs(skLines, budget, tokenCounter: tokenizer.CountTokens);
@@ -89,7 +88,7 @@ namespace FluentChunker.Benchmarks
                 var skOverruns = skChunks.Count(c => tokenizer.CountTokens(c) > budget);
 
                 Console.WriteLine($"  {name}");
-                Console.WriteLine($"    FluentChunker    {chunks.Count,4} chunks, max {fluentMax,4} tokens, {fluentOverruns} overruns, {replacementChars} broken chars, rebuild: {rebuilt}");
+                Console.WriteLine($"    FluentChunker    {chunks.Count,4} chunks, max {fluentMax,4} tokens, {fluentOverruns} overruns, rebuild: {rebuilt}");
                 Console.WriteLine($"    SemanticKernel   {skChunks.Count,4} chunks, max {skMax,4} tokens, {skOverruns} overruns");
                 Console.WriteLine();
             }
@@ -110,37 +109,27 @@ namespace FluentChunker.Benchmarks
 
             var overruns = 0;
             var maxObserved = 0;
-            var sliceMismatches = 0;
-            var reportedMismatches = 0;
 
             foreach (var chunk in chunks)
             {
-                // Re-measure rather than trust the reported count, because the claim under test is that the text itself fits the budget.
+                // Re-measure rather than trust the reported count, because what is comparable against another library is the size of the text itself.
                 var measured = tokenizer.CountTokens(chunk.Text);
 
                 if (measured > MaxTokens)
                     overruns++;
 
-                if (measured != chunk.TokenCount)
-                    reportedMismatches++;
-
                 maxObserved = Math.Max(maxObserved, measured);
-
-                if (chunk.SliceOf(document) != chunk.Text)
-                    sliceMismatches++;
             }
 
             Console.WriteLine(label);
             Console.WriteLine($"  chunks                 {chunks.Count:N0}");
             Console.WriteLine($"  max tokens observed    {maxObserved} (budget {MaxTokens})");
             Console.WriteLine($"  budget overruns        {overruns}");
-            Console.WriteLine($"  TokenCount mismatches  {reportedMismatches}");
-            Console.WriteLine($"  offsets not verbatim   {sliceMismatches}");
             Console.WriteLine($"  coverage               {Coverage(chunks, document)}");
             Console.WriteLine();
         }
 
-        // Concatenating the chunks with their overlap removed must rebuild the document, which is what proves nothing was dropped between them.
+        // Concatenating the chunks with their overlap removed rebuilds the document, which is how much of it a strategy actually hands back.
         private static string Coverage(IReadOnlyList<Chunk> chunks, string document)
         {
             var rebuilt = new StringBuilder();
@@ -209,8 +198,7 @@ namespace FluentChunker.Benchmarks
             Console.WriteLine($"  chunks                 {chunks.Count:N0}");
             Console.WriteLine($"  max tokens observed    {maxObserved} (budget {MaxTokens})");
             Console.WriteLine($"  budget overruns        {overruns}");
-            Console.WriteLine("  TokenCount mismatches  n/a (returns bare strings)");
-            Console.WriteLine("  offsets not verbatim   n/a (no offsets reported)");
+            Console.WriteLine("  coverage               n/a (returns bare strings, no offsets)");
             Console.WriteLine();
         }
 

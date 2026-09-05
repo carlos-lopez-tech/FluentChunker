@@ -68,8 +68,8 @@ namespace FluentChunker.Chunkers.Recursive
             return (consumed, StreamingChunkLoop.RemapPiece(ChunkCore(piece, cancellationToken), counter, basePosition));
         }
 
-        // Sizing every unit of a tier runs before that tier can emit its first chunk and is the bulk of the wait, so the token is threaded down to it.
-        // Splitting the document into paragraphs stays uninterruptible, a negligible floor against the counting it precedes.
+        // Sizing every unit of a tier runs before that tier can emit its first chunk and calls the tokenizer once per unit, so the token is threaded down to it.
+        // Splitting the document into paragraphs stays uninterruptible, being a single character scan that calls no tokenizer.
         private IEnumerable<Chunk> ChunkCore(string text, CancellationToken cancellationToken)
         {
             if (string.IsNullOrEmpty(text))

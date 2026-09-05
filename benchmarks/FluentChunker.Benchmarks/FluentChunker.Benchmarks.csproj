@@ -20,7 +20,8 @@
 
   <ItemGroup>
     <!-- Embedded rather than copied, because BenchmarkDotNet runs generated child processes whose working directory is not the build output -->
-    <EmbeddedResource Include="Corpora/*.md" />
+    <!-- Linked from the repository root, which is where the corpus the test sweeps also read lives -->
+    <EmbeddedResource Include="$(MSBuildThisFileDirectory)../../corpora/*.md" Link="Corpora/%(Filename)%(Extension)" />
   </ItemGroup>
 
 </Project>

@@ -4,6 +4,21 @@
 * text=auto
 
 ###############################################################################
+# Pin the shared corpus and the recorded boundaries to LF.
+#
+# BoundaryDrift records absolute character offsets into the corpus, so a CRLF
+# checkout shifts every offset and the drift gate reports a breaking change
+# that did not happen. Both corpus loaders normalise on read as well, because
+# these rules only govern files that arrive through git.
+#
+# The corpus sits at the repository root rather than inside either project,
+# because the test sweeps and the benchmarks both read it and neither should
+# depend on a path inside the other.
+###############################################################################
+corpora/*.md text eol=lf
+benchmarks/**/Golden/*.txt text eol=lf
+
+###############################################################################
 # Set default behavior for command prompt diff.
 #
 # This is need for earlier builds of msysgit that does not have it on by

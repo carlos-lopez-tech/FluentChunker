@@ -11,6 +11,7 @@ namespace FluentChunker.Benchmarks
     public class StrategyBenchmarks
     {
         private string _document = null!;
+        private byte[] _documentBytes = null!;
         private ChunkingPipeline _fixedSize = null!;
         private ChunkingPipeline _sentenceAware = null!;
         private ChunkingPipeline _recursive = null!;
@@ -23,6 +24,7 @@ namespace FluentChunker.Benchmarks
         public void Setup()
         {
             _document = CorpusLoader.Load("english-prose.md");
+            _documentBytes = System.Text.Encoding.UTF8.GetBytes(_document);
 
             var tokenizer = new MicrosoftMLTokenizerAdapter("cl100k_base");
 
@@ -58,5 +60,31 @@ namespace FluentChunker.Benchmarks
 
         [Benchmark]
         public async Task<List<Chunk>> StructureAware() => await _structureAware.ChunkAsync(_document).ToListAsync();
+
+        // The reader overloads are the only path in the library that does real I/O, and they allocate differently: a pooled 262,144-char buffer plus one bounded string per segment.
+        // Fed from a MemoryStream over the corpus bytes rather than a file, so the number measures chunking rather than the disk.
+        // Constructing the stream inside the benchmark is deliberate, since a consumed reader cannot be replayed, and a MemoryStream over an existing array does not copy it.
+        // Structure-aware has no reader overload by design, so the pairing stops at three strategies.
+
+        [Benchmark]
+        public async Task<List<Chunk>> FixedSizeStreaming()
+        {
+            using var reader = new StreamReader(new MemoryStream(_documentBytes));
+            return await _fixedSize.ChunkAsync(reader).ToListAsync();
+        }
+
+        [Benchmark]
+        public async Task<List<Chunk>> SentenceAwareStreaming()
+        {
+            using var reader = new StreamReader(new MemoryStream(_documentBytes));
+            return await _sentenceAware.ChunkAsync(reader).ToListAsync();
+        }
+
+        [Benchmark]
+        public async Task<List<Chunk>> RecursiveStreaming()
+        {
+            using var reader = new StreamReader(new MemoryStream(_documentBytes));
+            return await _recursive.ChunkAsync(reader).ToListAsync();
+        }
     }
 }
