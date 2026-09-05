@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text;
 using FluentChunker.Contracts;
@@ -26,6 +27,8 @@ namespace FluentChunker.Benchmarks
         ];
 
         private const string CorpusName = "english-prose.md";
+
+        private const string GoldenFileName = "boundaries.txt";
 
         /// <returns>The process exit code: non-zero when a boundary moved, so a CI step can gate on it.</returns>
         internal static async Task<int> RunAsync(bool record)
@@ -80,15 +83,15 @@ namespace FluentChunker.Benchmarks
 
         private static int Verify(Dictionary<string, List<Chunk>> current, string document)
         {
-            var path = GoldenPath();
+            var lines = ReadGolden();
 
-            if (!File.Exists(path))
+            if (lines is null)
             {
-                Console.WriteLine($"No golden file at {path}. Record one first with: drift --record");
+                Console.WriteLine("No golden file embedded in the benchmark assembly. Record one first with: drift --record");
                 return 1;
             }
 
-            var golden = Parse(File.ReadAllLines(path));
+            var golden = Parse(lines);
             var drifted = false;
 
             Console.WriteLine($"Corpus: {CorpusName}, {document.Length:N0} chars");
@@ -178,9 +181,24 @@ namespace FluentChunker.Benchmarks
             return result;
         }
 
+        // Read through the manifest rather than from disk, because a CI build maps source paths to a deterministic root and rewrites the compile-time path in GoldenPath along with them, leaving it pointing at a directory that does not exist on the runner.
+        private static string[]? ReadGolden()
+        {
+            var assembly = Assembly.GetExecutingAssembly();
+            var resource = assembly.GetManifestResourceNames().SingleOrDefault(name => name.EndsWith(GoldenFileName, StringComparison.Ordinal));
+
+            if (resource is null)
+                return null;
+
+            using var stream = assembly.GetManifestResourceStream(resource)!;
+            using var reader = new StreamReader(stream);
+
+            return reader.ReadToEnd().Replace("\r\n", "\n").Split('\n');
+        }
+
         // Resolved from this file's compile-time path rather than the working directory, because `dotnet run` executes from the build output and the golden file belongs next to the source that produces it.
-        // Unlike the corpus, this file is written as well as read, so it cannot be an embedded resource.
+        // Recording is the only caller that can rely on that path, and recording only ever runs on a developer machine, where no source path mapping is in effect.
         private static string GoldenPath([CallerFilePath] string sourcePath = "") =>
-            Path.Combine(Path.GetDirectoryName(sourcePath)!, "Golden", "boundaries.txt");
+            Path.Combine(Path.GetDirectoryName(sourcePath)!, "Golden", GoldenFileName);
     }
 }

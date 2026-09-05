@@ -24,4 +24,9 @@
     <EmbeddedResource Include="$(MSBuildThisFileDirectory)../../corpora/*.md" Link="Corpora/%(Filename)%(Extension)" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Embedded so verification reads the recorded boundaries through the manifest, because a CI build maps source paths to a deterministic root and rewrites the compile-time path that locates this file for recording along with them -->
+    <EmbeddedResource Include="Golden/boundaries.txt" />
+  </ItemGroup>
+
 </Project>
