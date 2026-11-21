@@ -2,14 +2,14 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <!-- Overrides the net8.0;net10.0 from Directory.Build.props: a second TFM doubles run time for no extra signal -->
-    <TargetFrameworks>net10.0</TargetFrameworks>
+    <!-- Overrides the net8.0;net10.0;net11.0 from Directory.Build.props: a second TFM doubles run time for no extra signal -->
+    <TargetFrameworks>net11.0</TargetFrameworks>
     <IsPackable>false</IsPackable>
     <NoWarn>$(NoWarn);SKEXP0050</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="BenchmarkDotNet" Version="0.15.8" />
+    <PackageReference Include="BenchmarkDotNet" Version="0.16.0-preview.2" />
     <!-- The comparison baseline: the chunker a .NET RAG project reaches for today -->
     <PackageReference Include="Microsoft.SemanticKernel.Core" Version="1.78.0" />
   </ItemGroup>

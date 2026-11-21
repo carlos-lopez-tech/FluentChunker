@@ -24,6 +24,7 @@ jobs:
           dotnet-version: |
             8.0.x
             10.0.x
+            11.0.x
 
       - name: Restore
         run: dotnet restore FluentChunker.slnx
@@ -71,6 +72,7 @@ jobs:
           dotnet-version: |
             8.0.x
             10.0.x
+            11.0.x
 
       # Restore first: the listing only reports transitives once the graph is resolved
       - name: Restore

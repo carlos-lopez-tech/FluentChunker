@@ -24,6 +24,7 @@ jobs:
           dotnet-version: |
             8.0.x
             10.0.x
+            11.0.x
 
       # The tag is the single source of version truth, so v1.2.3 ships as 1.2.3
       - name: Derive version from tag
